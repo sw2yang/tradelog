@@ -20173,6 +20173,76 @@ function bkDownloadFullBackup(silent){
   }
 }
 
+// ──── HTML 스냅샷으로 저장 (데이터 내장 단일 파일) ────
+// 서버의 pristine index.html을 가져와서 __data__ 스크립트 태그에 현재 데이터를 주입해 단일 HTML 로 저장.
+// → 받은 사람이 더블클릭만으로 오프라인 열람 가능 (서버·PWA 불필요)
+async function bkDownloadHtmlSnapshot(){
+  try {
+    showToast('📄 HTML 스냅샷 준비 중...');
+
+    // 1) pristine HTML 소스 확보 — 우선 서버/SW 캐시에서 fetch
+    let srcHtml;
+    try {
+      const res = await fetch('./', { cache: 'reload' });
+      if (res.ok) srcHtml = await res.text();
+    } catch(e) { /* fallthrough */ }
+
+    // 2) fetch 실패 시 현재 DOM 을 폴백으로 사용
+    if (!srcHtml) srcHtml = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+
+    // 3) 현재 데이터 payload 구성
+    const payload = {
+      _meta: { app:'TradeLog', exportedAt: new Date().toISOString(), ver:'3.0', type:'snapshot' },
+      positions, templates, rules, violations, checkState, goals, events, journals, accounts, txList, interestList, watchlist,
+      principles: (function(){ try { return JSON.parse(localStorage.getItem('tl-principles')||'[]'); } catch(e){ return []; } })(),
+      baseline: (function(){ try { return localStorage.getItem('tl-baseline') || null; } catch(e){ return null; } })(),
+      roadmap:  (function(){ try { return JSON.parse(localStorage.getItem('tl-roadmap')||'null'); } catch(e){ return null; } })(),
+      customThemes:  (function(){ try { return JSON.parse(localStorage.getItem('tl-custom-themes')||'[]'); } catch(e){ return []; } })(),
+      customSectors: (function(){ try { return JSON.parse(localStorage.getItem('tl-custom-sectors')||'[]'); } catch(e){ return []; } })()
+    };
+    // </script> 시퀀스가 JSON 내부에 있으면 파싱 깨지므로 escape
+    const dataJson = JSON.stringify(payload).replace(/<\/script/gi, '<\\/script');
+
+    // 4) __data__ 태그 교체 (script 태그 문자열을 변수로 조립해 파서 오인 방지)
+    const S = 'script';
+    const openTag  = ['<', S, ' id="__data__" type="application/json">'].join('');
+    const closeTag = ['</', S, '>'].join('');
+    const newBlock = openTag + dataJson + closeTag;
+
+    let outHtml = srcHtml;
+    const idMarker = 'id="__data__"';
+    if (outHtml.includes(idMarker)) {
+      const idPos = outHtml.indexOf(idMarker);
+      const start = outHtml.lastIndexOf('<' + S, idPos);
+      const end   = outHtml.indexOf(closeTag, idPos) + closeTag.length;
+      if (start > -1 && end > closeTag.length) {
+        outHtml = outHtml.slice(0, start) + newBlock + outHtml.slice(end);
+      }
+    } else {
+      // 없으면 </body> 직전에 삽입
+      const bodyClose = outHtml.lastIndexOf('</body>');
+      if (bodyClose > -1) outHtml = outHtml.slice(0, bodyClose) + newBlock + '\n' + outHtml.slice(bodyClose);
+      else outHtml = outHtml + '\n' + newBlock;
+    }
+
+    // 5) 다운로드
+    const stamp = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+    const blob = new Blob([outHtml], { type: 'text/html;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'TradeLog_snapshot_' + stamp + '.html';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+
+    showToast('📄 HTML 스냅샷 다운로드 완료 (' + (outHtml.length/1024/1024).toFixed(1) + 'MB)');
+    return true;
+  } catch(e) {
+    console.error('[bkDownloadHtmlSnapshot]', e);
+    showToast('❌ HTML 스냅샷 실패: ' + e.message, true);
+    return false;
+  }
+}
+
 // ──── JSON 백업 파일에서 복원 ────
 function bkImportFromFile(){
   const input = document.createElement('input');
@@ -20329,10 +20399,16 @@ function renderBackupCenter(){
       '</div>'+
     '</div>'+
 
-    // 지금 백업 / 복원 버튼 (2열)
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">'+
-      '<button class="btn btn-primary" onclick="bkDownloadFullBackup(false)">💾 백업 다운로드</button>'+
-      '<button class="btn btn-outline" onclick="bkImportFromFile()">📥 JSON 복원</button>'+
+    // 백업 / 복원 / 스냅샷 버튼 (3열)
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:6px">'+
+      '<button class="btn btn-primary" onclick="bkDownloadFullBackup(false)" title="데이터만 JSON으로 저장. 복원 시 JSON 복원 버튼으로 불러옴">💾 JSON 백업</button>'+
+      '<button class="btn btn-outline" onclick="bkImportFromFile()" title="이전에 저장한 JSON 백업 파일을 가져와 데이터를 복원">📥 JSON 복원</button>'+
+      '<button class="btn btn-outline" onclick="bkDownloadHtmlSnapshot()" title="앱 전체 + 데이터를 단일 HTML로 저장. 더블클릭만으로 오프라인 열람">📄 HTML 스냅샷</button>'+
+    '</div>'+
+    '<div style="font-size:10px;color:var(--muted);line-height:1.5;margin-bottom:14px;padding:0 2px">'+
+      '💾 <b>JSON 백업</b>: 데이터만 (가벼움, ~수백 KB) · '+
+      '📥 <b>JSON 복원</b>: 데이터 가져오기 · '+
+      '📄 <b>HTML 스냅샷</b>: 앱 + 데이터 통째로 (~1MB, 더블클릭 열람)'+
     '</div>'+
 
     // 자동 백업 설정
