@@ -2,7 +2,7 @@
    ──────────────────────────────────────────
    모든 주요 이벤트에 console.log 추가해서 오프라인 실패 원인 추적
 */
-const VERSION = 'tl-v8.0.5';
+const VERSION = 'tl-v8.0.6';
 const SHELL_CACHE = `shell-${VERSION}`;
 const RUNTIME_CACHE = `runtime-${VERSION}`;
 
@@ -95,8 +95,10 @@ self.addEventListener('fetch', (event) => {
   let url;
   try { url = new URL(request.url); } catch { return; }
 
-  // 1) 실시간 데이터 — 네트워크 전용
-  if (NO_CACHE_HOSTS.some((h) => url.hostname.endsWith(h))) {
+  // 1) 실시간 데이터 — 네트워크 전용 (단, 우리 자신 origin은 제외!)
+  //    workers.dev 매칭이 tradelog.iypac.workers.dev 까지 포함하는 버그 수정
+  if (url.origin !== self.location.origin &&
+      NO_CACHE_HOSTS.some((h) => url.hostname.endsWith(h))) {
     console.log('[SW FETCH] → pass-through (API):', url.hostname);
     return;
   }
