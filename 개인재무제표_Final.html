@@ -1,0 +1,2720 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>개인 재무제표 v8 — 자산 증식 대시보드</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#07101f;--card:#0d1829;--alt:#132035;--bdr:#1a2d46;
+  --blue:#3b82f6;--cyan:#06b6d4;--grn:#10b981;--red:#ef4444;
+  --amb:#f59e0b;--pur:#8b5cf6;
+  --t1:#eef2f7;--t2:#8da4bf;--t3:#4a6180;
+
+  /* ── 타입 스케일 4단계 ── */
+  --fs-xs:11px;   /* 보조: 단위·뱃지·힌트·날짜 */
+  --fs-sm:13px;   /* 라벨: 카테고리명·KPI 설명·탭 */
+  --fs-md:15px;   /* 본문: 항목명·입력값·일반 텍스트 */
+  --fs-lg:20px;   /* 강조: 섹션 합계·KPI 숫자 */
+  --fs-xl:26px;   /* 헤더: 섹션 타이틀 */
+
+  --fw-reg:400;
+  --fw-med:600;
+  --fw-bold:700;
+  --fw-black:800;
+}
+body{background:var(--bg);color:var(--t1);font-family:-apple-system,system-ui,"Malgun Gothic",sans-serif;font-size:var(--fs-md);line-height:1.6;min-height:100vh}
+
+/* ── Header ── */
+.hdr{background:#0a1525;border-bottom:1px solid var(--bdr);padding:16px 40px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+.hdr-left h1{font-size:18px;font-weight:var(--fw-black);letter-spacing:-.3px}
+.hdr-left h1 em{color:var(--cyan);font-style:normal}
+.hdr-left .sub{font-size:var(--fs-xs);color:var(--t3);margin-top:2px}
+/* v6: phase-badge 제거됨 — 통합 양식으로 전환 */
+.hs{display:flex;gap:24px}
+.hs>div{text-align:right}
+.hs small{font-size:var(--fs-xs);color:var(--t3);display:block;margin-bottom:2px}
+.hs b{font-size:var(--fs-sm);font-weight:var(--fw-bold)}
+@media(max-width:800px){.hs{display:none}}
+
+/* v6: phase-bar 제거됨 */
+.progress-info{font-size:var(--fs-xs);color:var(--t3)}
+
+/* ── Tabs ── */
+.tabs{display:flex;gap:2px;padding:8px 40px;background:var(--card);border-bottom:1px solid var(--bdr);overflow-x:auto}
+.tabs button{padding:8px 18px;border-radius:7px;border:none;cursor:pointer;font-size:var(--fs-sm);font-weight:var(--fw-med);background:transparent;color:var(--t2);white-space:nowrap}
+.tabs button.on{font-weight:var(--fw-bold);background:var(--blue);color:#fff}
+
+/* ── Layout ── */
+.mn{padding:40px 64px;max-width:1100px;margin:0 auto}
+.pg{display:none}.pg.on{display:block}
+.rw{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:32px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px}
+@media(max-width:800px){.g2,.mn{grid-template-columns:1fr;padding:20px 20px}}
+
+/* ── Cards (차트용) ── */
+.cd{background:var(--card);border-radius:16px;border:1px solid var(--bdr);overflow:hidden;margin-bottom:32px}
+.ch{padding:16px 24px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:10px}
+.ch .dt{width:3px;height:14px;border-radius:2px;flex-shrink:0}
+.ch b{font-size:var(--fs-sm);font-weight:var(--fw-bold);flex:1}
+.cb{padding:22px 24px}
+
+/* ── Section card — 풀와이드 1열 ── */
+.sec-cd{border-radius:18px;border:1px solid var(--bdr);overflow:hidden;margin-bottom:36px}
+.sec-hd{padding:22px 32px;display:flex;align-items:center;justify-content:space-between}
+.sec-hd .sec-label{font-size:var(--fs-xl);font-weight:var(--fw-black);letter-spacing:-.5px}
+.sec-hd .sec-total{font-size:var(--fs-xl);font-weight:var(--fw-black);letter-spacing:-.5px}
+.sec-body{padding:20px 32px 28px}
+
+/* ── KPI tiles ── */
+.kp{background:var(--alt);border-radius:12px;padding:18px 20px;border:1px solid var(--bdr);flex:1;min-width:120px}
+.kp.w{border-color:rgba(239,68,68,.3)}
+.kp small{font-size:var(--fs-xs);color:var(--t3);display:block;margin-bottom:6px;font-weight:var(--fw-med);letter-spacing:.04em;text-transform:uppercase}
+.kp strong{font-size:var(--fs-lg);font-weight:var(--fw-black);display:block;line-height:1.15;letter-spacing:-.3px}
+.kp .sub{font-size:var(--fs-xs);color:var(--t3);margin-top:4px}
+
+/* ── 카테고리 행 ── */
+.cr{display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--alt);border-radius:8px;margin-bottom:4px;font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--t2)}
+.cr .nm{flex:1;cursor:pointer}
+.cr .st{font-weight:var(--fw-bold)}
+.cr button{background:none;border:none;cursor:pointer;color:var(--t3);font-size:var(--fs-md);padding:0 4px;line-height:1}
+.cr .x{color:rgba(239,68,68,.5);font-size:var(--fs-xs)}
+
+/* ── 항목 행 ── */
+.ir{display:flex;align-items:center;padding:11px 14px 11px 28px;border-bottom:1px solid rgba(26,45,70,.18);gap:12px}
+.ir .nm{flex:1;font-size:var(--fs-md);color:var(--t2);cursor:pointer}
+.ir input{background:#0a1422;border:1px solid var(--bdr);border-radius:7px;padding:8px 14px;color:var(--cyan);font-size:var(--fs-md);font-weight:var(--fw-bold);width:170px;text-align:right;outline:none;transition:border-color .15s}
+.ir input:focus{border-color:var(--cyan)}
+.ir .u{font-size:var(--fs-xs);color:var(--t3);white-space:nowrap}
+.ir .x{background:none;border:none;cursor:pointer;color:rgba(239,68,68,.4);font-size:var(--fs-xs);padding:0 4px}
+.sf{display:flex;justify-content:space-between;align-items:center;padding:16px 14px 4px;margin-top:10px}
+
+/* ── 대시보드 요약 행 ── */
+.vc{display:flex;justify-content:space-between;padding:8px 12px;background:var(--alt);border-radius:6px;margin-bottom:4px;font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--t2)}
+.vi{display:flex;justify-content:space-between;padding:7px 12px 7px 22px;border-bottom:1px solid rgba(26,45,70,.15);font-size:var(--fs-md)}
+.vi .vl{font-weight:var(--fw-med)}
+
+/* ── Buttons ── */
+.sv{padding:9px 22px;border-radius:8px;border:none;background:var(--cyan);color:#000;font-weight:var(--fw-bold);font-size:var(--fs-sm);cursor:pointer}
+.pf{padding:9px 18px;border-radius:8px;border:1px solid var(--pur);background:transparent;color:var(--pur);font-weight:var(--fw-bold);font-size:var(--fs-sm);cursor:pointer}
+.sb{padding:5px 12px;border-radius:7px;border:none;font-size:var(--fs-xs);font-weight:var(--fw-bold);cursor:pointer;color:#fff}
+
+/* ── Hint ── */
+.ht{padding:12px 16px;background:var(--alt);border-radius:10px;font-size:var(--fs-xs);color:var(--t3);margin-bottom:22px;line-height:1.8}
+
+/* ── 건전성 지표 ── */
+.idr{display:flex;align-items:center;padding:13px 16px;border-radius:10px;background:var(--alt);gap:12px;margin-bottom:8px}
+.idr .n{flex:0 0 120px;font-weight:var(--fw-med);font-size:var(--fs-md)}
+.idr .v{flex:0 0 100px;font-weight:var(--fw-black);font-size:var(--fs-lg);text-align:right}
+.idr .s{flex:0 0 70px;font-size:var(--fs-xs);color:var(--t3);text-align:center}
+.idr .d{flex:1;font-size:var(--fs-xs);color:var(--t3)}
+.bdg{padding:3px 10px;border-radius:16px;font-size:var(--fs-xs);font-weight:var(--fw-bold)}
+
+/* ── Table ── */
+table{width:100%;border-collapse:collapse}
+th{padding:8px 10px;font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--t2);border-bottom:1px solid var(--bdr);text-align:right;letter-spacing:.04em;text-transform:uppercase}
+td{padding:8px 10px;font-size:var(--fs-sm);border-bottom:1px solid rgba(26,45,70,.15);text-align:right}
+
+/* ── Charts ── */
+.cw{position:relative;height:280px}
+
+/* ── Checklist ── */
+.ck-item{display:flex;align-items:flex-start;gap:14px;padding:14px 16px;border-radius:10px;margin-bottom:6px;cursor:pointer;transition:background .15s}
+.ck-item:hover{background:var(--alt)}
+.ck-item.done{opacity:.5}
+.ck-box{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--bdr);flex-shrink:0;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:var(--fs-xs);transition:all .15s}
+.ck-item.done .ck-box{background:var(--grn);border-color:var(--grn)}
+.ck-content{flex:1}
+.ck-title{font-size:var(--fs-md);font-weight:var(--fw-med)}
+.ck-desc{font-size:var(--fs-xs);color:var(--t3);margin-top:3px;line-height:1.6}
+.ck-item.done .ck-title{text-decoration:line-through;color:var(--t3)}
+.ck-amt{font-size:var(--fs-sm);font-weight:var(--fw-bold);white-space:nowrap;padding-top:2px}
+.ck-sec{font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--t3);padding:14px 4px 6px;letter-spacing:.08em;text-transform:uppercase}
+
+/* ── Bucket ── */
+.bkt{border-radius:12px;padding:20px 24px;border:1px solid var(--bdr);margin-bottom:12px}
+.bkt-title{font-size:var(--fs-md);font-weight:var(--fw-bold);margin-bottom:10px;display:flex;justify-content:space-between;align-items:baseline}
+.bkt-bar-bg{background:rgba(255,255,255,.07);border-radius:4px;height:6px;margin-bottom:10px;overflow:hidden}
+.bkt-bar-fill{height:100%;border-radius:4px;transition:width .5s}
+.bkt-items{font-size:var(--fs-sm);color:var(--t2);line-height:1.8}
+
+/* ── Currency toggle ── */
+.cur-btn{padding:3px 9px;border-radius:6px;border:1px solid var(--bdr);font-size:var(--fs-xs);font-weight:var(--fw-bold);cursor:pointer;background:transparent;color:var(--t3);transition:all .15s;flex-shrink:0}
+.cur-btn.eur{border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.12);color:#fbbf24}
+.cur-btn.krw{border-color:var(--bdr);color:var(--t3)}
+
+/* ── EUR rate bar ── */
+.eur-bar{display:flex;align-items:center;gap:14px;background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);border-radius:10px;padding:14px 20px;margin-bottom:22px;flex-wrap:wrap}
+.eur-bar label{font-size:var(--fs-sm);color:#fbbf24;font-weight:var(--fw-bold)}
+.eur-rate-input{background:#0a1422;border:1px solid rgba(251,191,36,.35);border-radius:7px;padding:8px 14px;color:#fbbf24;font-size:var(--fs-md);font-weight:var(--fw-bold);width:130px;text-align:right;outline:none}
+.eur-rate-input:focus{border-color:#fbbf24}
+.eur-badge{font-size:var(--fs-xs);background:rgba(251,191,36,.12);color:#fbbf24;padding:2px 9px;border-radius:10px;font-weight:var(--fw-bold)}
+.ir.eur{border-left:2px solid rgba(251,191,36,.4)}
+.ir .eur-equiv{font-size:var(--fs-xs);color:var(--t3);margin-left:4px;white-space:nowrap}
+
+/* ── Item tip ── */
+.ir-wrap{border-bottom:1px solid rgba(26,45,70,.18)}
+.ir-wrap .ir{border-bottom:none}
+.item-tip-input{width:100%;background:transparent;border:none;outline:none;font-size:var(--fs-xs);color:var(--t3);font-family:inherit;resize:none;padding:2px 14px 8px 28px;line-height:1.6;display:block}
+.item-tip-input::placeholder{color:var(--t3);opacity:.4}
+
+/* ── Bucket target edit ── */
+.bkt-target-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.bkt-target-label{font-size:var(--fs-xs);color:var(--t3)}
+.bkt-target-input{background:rgba(255,255,255,.05);border:1px solid var(--bdr);border-radius:7px;padding:6px 12px;color:var(--t2);font-size:var(--fs-sm);font-weight:var(--fw-bold);width:160px;text-align:right;outline:none;transition:border-color .15s}
+.bkt-target-input:focus{border-color:var(--cyan);color:var(--t1)}
+
+/* ── Month select ── */
+.month-sel{background:var(--alt);border:1px solid var(--bdr);border-radius:9px;color:var(--t1);padding:9px 16px;font-size:var(--fs-sm);font-weight:var(--fw-bold);cursor:pointer;outline:none}
+.month-sel:focus{border-color:var(--cyan)}
+
+/* ── v6: KPI delta ── */
+.kp .dlt{display:block;font-size:var(--fs-xs);margin-top:4px;font-weight:var(--fw-bold);letter-spacing:-.2px}
+.kp .dlt.up{color:var(--grn)}
+.kp .dlt.dn{color:var(--red)}
+.kp .dlt.flat{color:var(--t3)}
+
+/* ── v6: Period filter ── */
+.pd-filter{display:inline-flex;gap:2px;background:var(--alt);border-radius:8px;padding:3px;margin-left:auto}
+.pd-filter button{padding:4px 12px;border-radius:6px;border:none;cursor:pointer;font-size:var(--fs-xs);font-weight:var(--fw-bold);background:transparent;color:var(--t3)}
+.pd-filter button.on{background:var(--blue);color:#fff}
+
+/* ── v6: Goal progress bar ── */
+.gl-prog{margin-top:8px}
+.gl-prog-bar{height:5px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden;margin-top:4px}
+.gl-prog-fill{height:100%;border-radius:3px;transition:width .4s}
+.gl-amt-row{display:flex;gap:8px;margin-top:6px;font-size:var(--fs-xs);color:var(--t3);align-items:center}
+.gl-amt-input{background:rgba(255,255,255,.04);border:1px solid var(--bdr);border-radius:5px;padding:3px 8px;color:var(--t2);font-size:var(--fs-xs);font-weight:var(--fw-bold);width:110px;text-align:right;outline:none}
+.gl-amt-input:focus{border-color:var(--cyan);color:var(--t1)}
+
+/* ── v6: Simulation ── */
+.sim-ctrl{display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:var(--alt);border-radius:12px;padding:14px 20px;margin-bottom:18px;border:1px solid var(--bdr)}
+.sim-ctrl label{font-size:var(--fs-xs);color:var(--t3);font-weight:var(--fw-bold);letter-spacing:.04em;text-transform:uppercase}
+.sim-ctrl input[type=number]{background:#0a1422;border:1px solid var(--bdr);border-radius:7px;padding:6px 12px;color:var(--t1);font-size:var(--fs-sm);font-weight:var(--fw-bold);width:120px;text-align:right;outline:none}
+.sim-ctrl input[type=number]:focus{border-color:var(--pur)}
+.sim-ctrl input[type=range]{accent-color:var(--pur);width:160px}
+.sim-res{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:20px}
+.sim-res .kp{border-color:rgba(139,92,246,.25);background:rgba(139,92,246,.05)}
+
+/* ── v6: Keyboard hint ── */
+.kbd-hint{display:inline-block;padding:1px 6px;border:1px solid var(--bdr);border-radius:4px;font-size:10px;font-family:ui-monospace,monospace;color:var(--t3);background:var(--alt);margin-left:4px}
+
+/* ── v7: 이달의 진단 카드 ── */
+.diag-card{background:linear-gradient(135deg,rgba(6,182,212,.07),rgba(139,92,246,.07));border:1px solid rgba(6,182,212,.25);border-radius:16px;padding:20px 26px;margin-bottom:26px}
+.diag-card .title{font-size:var(--fs-sm);color:var(--cyan);font-weight:var(--fw-black);letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.diag-card .line{display:flex;align-items:flex-start;gap:10px;padding:7px 0;font-size:var(--fs-md);line-height:1.6;color:var(--t1)}
+.diag-card .line .icon{flex-shrink:0;font-size:16px;line-height:1}
+.diag-card .line.bad{color:#fca5a5}
+.diag-card .line.warn{color:#fcd34d}
+.diag-card .line.good{color:#6ee7b7}
+.diag-card .line.info{color:var(--t2)}
+
+/* ── v7: 종합 건전성 게이지 ── */
+.health-wrap{display:grid;grid-template-columns:240px 1fr;gap:24px;align-items:center;background:var(--card);border:1px solid var(--bdr);border-radius:16px;padding:22px 26px;margin-bottom:26px}
+.health-gauge{position:relative;width:220px;height:140px}
+.health-gauge canvas{width:100%!important;height:100%!important}
+.health-gauge .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:6px;pointer-events:none}
+.health-gauge .score{font-size:42px;font-weight:var(--fw-black);line-height:1;letter-spacing:-1px}
+.health-gauge .label{font-size:var(--fs-xs);color:var(--t3);font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-top:2px}
+.health-bars{display:grid;grid-template-columns:1fr;gap:9px}
+.h-bar-row{display:grid;grid-template-columns:90px 1fr 70px 50px;gap:10px;align-items:center;font-size:var(--fs-sm)}
+.h-bar-row .n{color:var(--t2);font-weight:600}
+.h-bar-row .v{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.h-bar-row .bdg{text-align:center;font-size:10px;padding:2px 8px;border-radius:12px;font-weight:700}
+.h-bar{height:7px;background:rgba(255,255,255,.05);border-radius:4px;overflow:hidden}
+.h-bar-fill{height:100%;border-radius:4px;transition:width .5s}
+@media(max-width:800px){.health-wrap{grid-template-columns:1fr}.health-gauge{margin:0 auto}}
+
+/* ── v7: 자산구성 / 현금흐름 ── */
+.alloc-wrap{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:26px}
+@media(max-width:900px){.alloc-wrap{grid-template-columns:1fr}}
+.alloc-card{background:var(--card);border:1px solid var(--bdr);border-radius:16px;overflow:hidden}
+.alloc-hd{padding:16px 22px;border-bottom:1px solid var(--bdr);font-size:var(--fs-sm);font-weight:700;display:flex;align-items:center;gap:8px}
+.alloc-bd{padding:20px 22px}
+.alloc-legend{display:flex;flex-direction:column;gap:7px;margin-top:14px}
+.alloc-legend .row{display:grid;grid-template-columns:10px 1fr auto auto;gap:8px;align-items:center;font-size:var(--fs-sm)}
+.alloc-legend .dot{width:10px;height:10px;border-radius:3px}
+.alloc-legend .pct{color:var(--t3);font-size:var(--fs-xs);font-weight:700;min-width:42px;text-align:right}
+.alloc-legend .amt{font-weight:700;font-variant-numeric:tabular-nums;min-width:88px;text-align:right}
+
+/* ── v7: Waterfall 폭포 ── */
+.wf-row{display:grid;grid-template-columns:110px 1fr 110px;gap:10px;align-items:center;padding:6px 0;font-size:var(--fs-sm)}
+.wf-row .n{color:var(--t2);font-weight:600}
+.wf-row .v{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.wf-bar-bg{position:relative;height:22px;background:rgba(255,255,255,.04);border-radius:4px;overflow:hidden}
+.wf-bar{position:absolute;top:0;bottom:0;border-radius:4px;transition:all .4s}
+.wf-total-row{border-top:1px solid var(--bdr);margin-top:8px;padding-top:10px;font-weight:800}
+
+/* ── v7: 지출 TOP 리스트 ── */
+.top-exp{background:var(--card);border:1px solid var(--bdr);border-radius:16px;padding:20px 24px;margin-bottom:26px}
+.top-exp-title{font-size:var(--fs-sm);font-weight:700;margin-bottom:14px;color:var(--t1)}
+.top-exp-row{display:grid;grid-template-columns:1fr 120px 90px;gap:14px;align-items:center;padding:9px 0;border-bottom:1px dashed rgba(26,45,70,.4);font-size:var(--fs-sm)}
+.top-exp-row:last-child{border-bottom:none}
+.top-exp-row .n{color:var(--t1);font-weight:600}
+.top-exp-row .n small{color:var(--t3);font-weight:400;margin-left:6px}
+.top-exp-row .v{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.top-exp-row .d{text-align:right;font-size:var(--fs-xs);font-weight:700}
+.top-exp-row .d.up{color:var(--red)}
+.top-exp-row .d.dn{color:var(--grn)}
+.top-exp-row .d.flat{color:var(--t3)}
+
+/* ═══════════════════════════════════════════
+   v8: 자산 증식 인사이트 신규 CSS
+═══════════════════════════════════════════ */
+
+/* 오늘의 행동 제안 카드 */
+.action-card{background:linear-gradient(135deg,rgba(139,92,246,.12),rgba(6,182,212,.08));border:1px solid rgba(139,92,246,.3);border-radius:18px;padding:22px 26px;margin-bottom:26px;position:relative;overflow:hidden}
+.action-card::before{content:'';position:absolute;top:0;right:0;width:140px;height:140px;background:radial-gradient(circle,rgba(139,92,246,.12),transparent 70%);pointer-events:none}
+.action-card .tag{display:inline-block;padding:3px 10px;background:rgba(139,92,246,.2);color:#c4b5fd;border-radius:12px;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px}
+.action-card h3{font-size:17px;font-weight:800;color:var(--t1);margin-bottom:10px;display:flex;align-items:center;gap:10px}
+.action-card h3 .icon{font-size:24px}
+.action-card .body{font-size:14px;line-height:1.7;color:var(--t1);margin-bottom:12px}
+.action-card .cta{display:inline-block;padding:8px 14px;background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.35);border-radius:10px;font-size:13px;color:#c4b5fd;font-weight:600}
+
+/* 관점 토글 */
+.view-toggle{display:flex;gap:4px;background:var(--alt);border-radius:11px;padding:4px;margin-bottom:24px;align-self:center;border:1px solid var(--bdr)}
+.view-toggle button{flex:1;padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-size:var(--fs-sm);font-weight:700;background:transparent;color:var(--t3);transition:all .15s}
+.view-toggle button.on{color:#000}
+.view-toggle button.on.growth{background:linear-gradient(135deg,var(--pur),var(--cyan));color:#fff}
+.view-toggle button.on.defense{background:linear-gradient(135deg,var(--grn),var(--cyan));color:#fff}
+.view-toggle-wrap{display:flex;justify-content:center;margin-bottom:22px}
+.view-toggle-wrap .hint{font-size:var(--fs-xs);color:var(--t3);margin-left:12px;align-self:center}
+
+/* 자산 증가 원천 분해 */
+.attrib-card{background:var(--card);border:1px solid var(--bdr);border-radius:16px;overflow:hidden;margin-bottom:26px}
+.attrib-hd{padding:16px 22px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:10px;font-size:var(--fs-sm);font-weight:700}
+.attrib-bd{padding:20px 22px}
+.attrib-summary{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:18px}
+@media(max-width:640px){.attrib-summary{grid-template-columns:1fr}}
+.attrib-box{padding:12px 14px;border-radius:10px;background:var(--alt);border:1px solid var(--bdr)}
+.attrib-box .lbl{font-size:var(--fs-xs);color:var(--t3);font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px}
+.attrib-box .val{font-size:16px;font-weight:800;line-height:1.2}
+.attrib-box .sub{font-size:var(--fs-xs);color:var(--t3);margin-top:3px}
+.attrib-chart{position:relative;height:240px}
+
+/* 수동 소득 비율 */
+.pir-card{background:linear-gradient(135deg,rgba(16,185,129,.07),rgba(6,182,212,.05));border:1px solid rgba(16,185,129,.25);border-radius:16px;padding:22px 26px;margin-bottom:26px}
+.pir-card .tit{font-size:var(--fs-sm);font-weight:800;color:var(--grn);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.pir-main{display:grid;grid-template-columns:180px 1fr;gap:24px;align-items:center}
+@media(max-width:800px){.pir-main{grid-template-columns:1fr}}
+.pir-pct{font-size:56px;font-weight:900;letter-spacing:-2px;line-height:1;color:var(--grn)}
+.pir-pct small{font-size:24px;color:var(--t3)}
+.pir-meaning{font-size:14px;color:var(--t1);line-height:1.7}
+.pir-meaning b{color:var(--grn)}
+.pir-bar-wrap{margin-top:14px}
+.pir-bar-bg{height:10px;background:rgba(255,255,255,.05);border-radius:5px;overflow:hidden;margin-bottom:6px;position:relative}
+.pir-bar-fill{height:100%;border-radius:5px;background:linear-gradient(90deg,var(--grn),var(--cyan));transition:width .6s}
+.pir-bar-marks{display:flex;justify-content:space-between;font-size:10px;color:var(--t3);font-weight:700}
+.pir-stats{display:flex;gap:18px;margin-top:12px;flex-wrap:wrap;font-size:var(--fs-xs);color:var(--t3)}
+.pir-stats b{color:var(--t1);font-weight:700}
+
+/* 유휴 현금 경고 */
+.idle-card{background:linear-gradient(135deg,rgba(245,158,11,.08),rgba(239,68,68,.04));border:1px solid rgba(245,158,11,.28);border-radius:14px;padding:18px 22px;margin-bottom:26px;display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center}
+@media(max-width:640px){.idle-card{grid-template-columns:1fr}}
+.idle-card .lbl{font-size:var(--fs-xs);color:var(--amb);font-weight:800;letter-spacing:.04em;text-transform:uppercase;margin-bottom:6px}
+.idle-card .body{font-size:14px;color:var(--t1);line-height:1.6}
+.idle-card .body b{color:#fcd34d}
+.idle-card .opp{text-align:right}
+.idle-card .opp-val{font-size:22px;font-weight:900;color:#fcd34d;line-height:1}
+.idle-card .opp-sub{font-size:11px;color:var(--t3);margin-top:4px;font-weight:600}
+
+/* 복리 시뮬레이션 강화 */
+.sim-v2{background:var(--card);border:1px solid var(--bdr);border-radius:16px;padding:20px 24px;margin-bottom:26px}
+.sim-v2-hd{display:flex;align-items:center;gap:10px;margin-bottom:16px;font-size:var(--fs-sm);font-weight:800}
+.sim-rate-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.sim-rate-row .lbl{font-size:var(--fs-xs);color:var(--t3);font-weight:700;margin-right:6px}
+.sim-rate-btn{padding:5px 12px;border-radius:7px;border:1px solid var(--bdr);background:transparent;color:var(--t2);font-size:var(--fs-xs);font-weight:700;cursor:pointer}
+.sim-rate-btn.on{background:var(--pur);color:#fff;border-color:var(--pur)}
+.sim-result-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:14px}
+@media(max-width:800px){.sim-result-grid{grid-template-columns:1fr}}
+.sim-result-box{padding:14px 16px;border-radius:10px;background:var(--alt);border-left:3px solid var(--pur)}
+.sim-result-box .lbl{font-size:var(--fs-xs);color:var(--t3);font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-bottom:5px}
+.sim-result-box .val{font-size:18px;font-weight:800;color:var(--t1);line-height:1.2}
+.sim-result-box .sub{font-size:var(--fs-xs);color:var(--t3);margin-top:4px}
+.sim-result-box.hl{border-left-color:var(--cyan)}
+.sim-result-box.hl .val{color:var(--cyan)}
+
+/* 목표 역산 계산기 */
+.goal-card{background:linear-gradient(135deg,rgba(6,182,212,.07),rgba(139,92,246,.05));border:1px solid rgba(6,182,212,.28);border-radius:16px;padding:22px 26px;margin-bottom:26px}
+.goal-card .tit{font-size:var(--fs-sm);font-weight:800;color:var(--cyan);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.goal-inputs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}
+@media(max-width:800px){.goal-inputs{grid-template-columns:1fr}}
+.goal-input-box{display:flex;flex-direction:column;gap:6px}
+.goal-input-box label{font-size:var(--fs-xs);color:var(--t3);font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.goal-input-box input{background:#0a1422;border:1px solid var(--bdr);border-radius:8px;padding:10px 14px;color:var(--cyan);font-size:15px;font-weight:700;text-align:right;outline:none;width:100%}
+.goal-input-box input:focus{border-color:var(--cyan)}
+.goal-result{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding-top:14px;border-top:1px solid var(--bdr);margin-top:8px}
+@media(max-width:640px){.goal-result{grid-template-columns:1fr}}
+.goal-result-box{padding:14px 16px;border-radius:10px;background:var(--alt)}
+.goal-result-box .lbl{font-size:var(--fs-xs);color:var(--t3);font-weight:700;margin-bottom:4px}
+.goal-result-box .val{font-size:22px;font-weight:900;line-height:1.1;letter-spacing:-.5px}
+.goal-result-box.pos .val{color:var(--grn)}
+.goal-result-box.neg .val{color:var(--red)}
+.goal-result-box.neu .val{color:var(--cyan)}
+.goal-result-box .sub{font-size:var(--fs-xs);color:var(--t3);margin-top:6px;line-height:1.5}
+.goal-hint{margin-top:12px;padding:10px 14px;background:rgba(6,182,212,.07);border-radius:8px;font-size:12px;color:var(--t2);line-height:1.6}
+.goal-hint b{color:var(--cyan)}
+
+/* 저축률 추이 차트 */
+.sr-trend{background:var(--card);border:1px solid var(--bdr);border-radius:16px;padding:18px 22px;margin-bottom:26px}
+.sr-trend-hd{display:flex;align-items:center;gap:12px;margin-bottom:12px;font-size:var(--fs-sm);font-weight:800}
+.sr-trend-hd .avg{margin-left:auto;font-size:var(--fs-xs);color:var(--t3);font-weight:600}
+.sr-trend-hd .avg b{color:var(--cyan);font-weight:700}
+.sr-trend-wrap{position:relative;height:180px}
+
+/* 지출 히트맵 */
+.heatmap-card{background:var(--card);border:1px solid var(--bdr);border-radius:16px;padding:18px 22px;margin-bottom:26px;overflow-x:auto}
+.heatmap-card .hd{font-size:var(--fs-sm);font-weight:800;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.heatmap-card .hd .legend{margin-left:auto;display:flex;align-items:center;gap:4px;font-size:10px;color:var(--t3);font-weight:600}
+.heatmap-card .hd .legend .sq{width:14px;height:14px;border-radius:3px}
+.hm-table{border-collapse:separate;border-spacing:3px;min-width:100%}
+.hm-table th,.hm-table td{padding:0;font-size:11px;text-align:center}
+.hm-table th{font-weight:700;color:var(--t3);padding:2px 6px}
+.hm-table th.cat-name{text-align:left;min-width:100px;padding-left:0}
+.hm-cell{width:42px;height:28px;border-radius:4px;color:var(--t1);font-weight:700;font-size:10px;font-variant-numeric:tabular-nums;display:inline-flex;align-items:center;justify-content:center;cursor:default}
+.hm-cell.empty{background:rgba(255,255,255,.02);color:var(--t3)}
+
+/* ── v7: 도움말 모달 ── */
+.help-fab{position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,var(--cyan),var(--blue));color:#fff;border:none;font-size:22px;font-weight:800;cursor:pointer;box-shadow:0 6px 20px rgba(6,182,212,.45);z-index:90;display:flex;align-items:center;justify-content:center;transition:transform .15s}
+.help-fab:hover{transform:translateY(-2px) scale(1.05)}
+.help-fab::after{content:'도움말';position:absolute;right:64px;top:50%;transform:translateY(-50%);background:var(--card);color:var(--t1);padding:6px 12px;border-radius:7px;font-size:12px;font-weight:700;white-space:nowrap;border:1px solid var(--bdr);opacity:0;pointer-events:none;transition:opacity .15s}
+.help-fab:hover::after{opacity:1}
+.help-overlay{position:fixed;inset:0;background:rgba(7,16,31,.85);backdrop-filter:blur(6px);z-index:100;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
+.help-overlay.on{display:flex}
+.help-modal{max-width:800px;width:100%;background:var(--card);border:1px solid var(--bdr);border-radius:18px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);animation:helpIn .2s ease-out}
+@keyframes helpIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+.help-hd{padding:22px 28px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,rgba(6,182,212,.08),rgba(59,130,246,.04))}
+.help-hd h2{font-size:20px;font-weight:800;letter-spacing:-.3px;flex:1;margin:0}
+.help-hd .close{background:transparent;border:1px solid var(--bdr);color:var(--t2);width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center}
+.help-hd .close:hover{border-color:var(--red);color:var(--red)}
+.help-bd{padding:22px 28px;max-height:calc(100vh - 180px);overflow-y:auto}
+.help-sec{margin-bottom:26px}
+.help-sec:last-child{margin-bottom:4px}
+.help-sec h3{font-size:14px;font-weight:800;color:var(--cyan);letter-spacing:.02em;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.help-sec p, .help-sec li{font-size:13px;line-height:1.75;color:var(--t2)}
+.help-sec ul{list-style:none;padding:0}
+.help-sec li{padding:6px 0 6px 22px;position:relative}
+.help-sec li::before{content:'▸';position:absolute;left:6px;color:var(--t3);font-size:11px;top:10px}
+.help-sec li b{color:var(--t1);font-weight:700}
+.help-sec .kbd{display:inline-block;padding:2px 8px;border:1px solid var(--bdr);border-radius:5px;font-size:11px;font-family:ui-monospace,monospace;color:var(--t1);background:var(--alt);margin:0 2px;font-weight:700}
+.help-sec .step{display:flex;gap:14px;padding:10px 14px;margin-bottom:8px;background:var(--alt);border-radius:10px;border-left:3px solid var(--cyan)}
+.help-sec .step .num{flex-shrink:0;width:26px;height:26px;border-radius:50%;background:var(--cyan);color:#000;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center}
+.help-sec .step .txt{font-size:13px;color:var(--t1);line-height:1.65}
+.help-sec .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;background:var(--alt);color:var(--t2);border:1px solid var(--bdr);margin-right:4px}
+.help-sec .ft{padding:10px 14px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:9px;font-size:12px;color:var(--amb);line-height:1.7}
+.help-sec .ft b{color:#fcd34d}
+.help-tabs{display:flex;gap:2px;padding:10px 18px 0;background:var(--card);border-bottom:1px solid var(--bdr);overflow-x:auto}
+.help-tabs button{padding:9px 14px;border-radius:7px 7px 0 0;border:none;cursor:pointer;font-size:12px;font-weight:700;background:transparent;color:var(--t3);white-space:nowrap}
+.help-tabs button.on{background:var(--alt);color:var(--t1)}
+.help-page{display:none}
+.help-page.on{display:block}
+@media(max-width:640px){.help-fab{bottom:16px;right:16px;width:46px;height:46px;font-size:20px}.help-hd{padding:16px 20px}.help-bd{padding:16px 20px}}
+
+/* ── v7: 아카이브 ── */
+.arch-bar{display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(148,163,184,.06);border:1px solid rgba(148,163,184,.15);border-radius:10px;margin-bottom:18px;flex-wrap:wrap}
+.arch-bar .cnt{font-size:var(--fs-xs);color:var(--t3);font-weight:700}
+.arch-bar .cnt b{color:var(--t1)}
+.arch-bar button{padding:5px 13px;border-radius:7px;border:1px solid var(--bdr);background:transparent;color:var(--t2);font-size:var(--fs-xs);font-weight:700;cursor:pointer}
+.arch-bar button.on{background:rgba(148,163,184,.18);color:var(--t1);border-color:rgba(148,163,184,.3)}
+.ir.archived{opacity:.45;background:rgba(148,163,184,.04)}
+.ir.archived input{color:var(--t3)!important}
+.ir.archived .nm{text-decoration:line-through;color:var(--t3)}
+.arch-btn{background:none;border:1px solid var(--bdr);border-radius:5px;color:var(--t3);font-size:10px;font-weight:700;padding:2px 7px;cursor:pointer;line-height:1.2;white-space:nowrap;transition:all .15s}
+.arch-btn:hover{border-color:var(--amb);color:var(--amb)}
+.arch-btn.on{background:rgba(245,158,11,.15);color:var(--amb);border-color:rgba(245,158,11,.35)}
+
+/* ── v7: 카테고리 요약 (컴팩트) ── */
+.cat-sum{background:var(--card);border:1px solid var(--bdr);border-radius:16px;padding:18px 22px;margin-bottom:26px}
+.cat-sum-title{font-size:var(--fs-sm);font-weight:700;color:var(--t1);margin-bottom:14px}
+.cat-sum-title small{color:var(--t3);font-weight:400;margin-left:6px;font-size:var(--fs-xs)}
+.cat-sum-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:800px){.cat-sum-grid{grid-template-columns:1fr}}
+.cat-sum-col{border-left:3px solid;padding:10px 14px 12px;border-radius:6px;background:rgba(255,255,255,.015)}
+.cat-sum-hd{display:flex;justify-content:space-between;align-items:baseline;font-size:var(--fs-md);font-weight:800;margin-bottom:8px;padding-bottom:6px;border-bottom:1px dashed rgba(255,255,255,.06)}
+.cat-sum-row{display:grid;grid-template-columns:130px 1fr 90px;gap:10px;align-items:center;font-size:var(--fs-xs);padding:4px 0;color:var(--t2)}
+.cat-sum-row .nm{font-weight:600;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cat-sum-row .bar-wrap{height:5px;background:rgba(255,255,255,.04);border-radius:3px;overflow:hidden;position:relative}
+.cat-sum-row .bar{display:block;height:100%;border-radius:3px;opacity:.7;transition:width .5s}
+.cat-sum-row .amt{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:var(--t1)}
+
+/* ── v7: 마일스톤 진척 ── */
+.ms-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:26px}
+@media(max-width:800px){.ms-grid{grid-template-columns:1fr}}
+.ms-card{background:var(--card);border:1px solid var(--bdr);border-radius:14px;padding:16px 20px}
+.ms-label{font-size:var(--fs-xs);color:var(--t3);font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-bottom:6px}
+.ms-val{font-size:20px;font-weight:var(--fw-black);letter-spacing:-.3px;margin-bottom:6px}
+.ms-sub{font-size:var(--fs-xs);color:var(--t3);margin-bottom:10px;min-height:14px}
+.ms-prog-bg{height:8px;background:rgba(255,255,255,.05);border-radius:4px;overflow:hidden;margin-bottom:6px}
+.ms-prog-fill{height:100%;border-radius:4px;transition:width .6s}
+.ms-pct{font-size:var(--fs-xs);font-weight:700;text-align:right}
+
+/* ── v6: Mobile responsive ── */
+@media(max-width:800px){.g2,.mn{grid-template-columns:1fr;padding:20px 20px}}
+@media(max-width:640px){
+  .hdr{padding:12px 16px;flex-wrap:wrap;gap:10px}
+  .hdr-left h1{font-size:16px}
+  .tabs{padding:6px 12px}
+  .tabs button{padding:6px 12px;font-size:12px}
+  .mn{padding:16px 12px}
+  .rw{gap:8px;margin-bottom:18px}
+  .kp{padding:12px 14px;min-width:calc(50% - 4px)}
+  .kp strong{font-size:16px}
+  .sec-hd{padding:16px 18px}
+  .sec-hd .sec-label,.sec-hd .sec-total{font-size:18px}
+  .sec-body{padding:14px 16px 18px}
+  .ir{padding:10px 10px 10px 18px;gap:8px;flex-wrap:wrap}
+  .ir input{width:130px;padding:7px 10px;font-size:13px}
+  .cr{padding:8px 10px;font-size:12px;gap:6px}
+  .vc,.vi{padding:6px 10px;font-size:12px}
+  .vi{padding-left:18px}
+  .idr{flex-wrap:wrap;gap:8px 12px}
+  .idr .n{flex:0 0 90px}
+  .idr .v{flex:0 0 80px;font-size:16px}
+  .idr .d{flex:1 0 100%;order:10}
+  .bkt{padding:14px 16px}
+  .eur-bar{padding:10px 14px;gap:8px}
+  .sim-ctrl{padding:12px 14px;gap:10px}
+  .sim-ctrl input[type=number]{width:90px}
+  .sim-ctrl input[type=range]{width:120px}
+  .pd-filter{margin-left:0;margin-top:6px}
+  table{font-size:11px}
+  th,td{padding:6px 6px}
+  .hs{display:none}
+}
+</style>
+
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-left">
+    <h1><em>₩</em> 개인 재무제표</h1>
+    <div class="sub">양상운 가계 — 자산 증식 인사이트</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <div class="hs" id="hs"></div>
+    <span id="progress-info" class="progress-info" style="font-size:11px;color:var(--t3)"></span>
+    <button onclick="HELP_PAGE='intro';openHelp()" style="padding:5px 11px;border-radius:7px;border:1px solid rgba(16,185,129,.4);background:linear-gradient(135deg,rgba(16,185,129,.12),rgba(6,182,212,.08));color:#6ee7b7;font-size:11px;font-weight:700;cursor:pointer" title="처음이신가요? — 중학생도 이해하는 가이드">🌱 처음이세요?</button>
+    <button onclick="openHelp()" style="padding:5px 10px;border-radius:7px;border:1px solid rgba(6,182,212,.4);background:rgba(6,182,212,.08);color:var(--cyan);font-size:11px;font-weight:700;cursor:pointer" title="도움말 (?)">📘 도움말</button>
+    <button onclick="exportJSON()" style="padding:5px 13px;border-radius:7px;border:1px solid rgba(16,185,129,.4);background:rgba(16,185,129,.1);color:#10b981;font-size:11px;font-weight:700;cursor:pointer" title="Ctrl/Cmd+B">⬇ 내보내기</button>
+    <label style="padding:5px 13px;border-radius:7px;border:1px solid rgba(59,130,246,.4);background:rgba(59,130,246,.1);color:#3b82f6;font-size:11px;font-weight:700;cursor:pointer">
+      ⬆ 불러오기
+      <input type="file" accept=".json" style="display:none" onchange="importJSON(this)">
+    </label>
+    <span id="backup-msg" style="font-size:11px;color:var(--grn);font-weight:600"></span>
+  </div>
+</div>
+
+<div class="tabs" id="tabs"></div>
+<div class="mn" id="mn"></div>
+
+<!-- v7: 도움말 -->
+<button class="help-fab" onclick="openHelp()" title="도움말 (? 키)">?</button>
+<div class="help-overlay" id="help-overlay" onclick="if(event.target===this)closeHelp()">
+  <div class="help-modal">
+    <div class="help-hd">
+      <h2>📘 개인 재무제표 사용 안내</h2>
+      <button class="close" onclick="closeHelp()" title="닫기 (ESC)">✕</button>
+    </div>
+    <div class="help-tabs" id="help-tabs"></div>
+    <div class="help-bd" id="help-bd"></div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════
+   히스토리 (단위: 원)
+═══════════════════════════════════════════════ */
+const HIST=[
+  {ym:"22.06",rev:5450000,exp:8470000,asset:1516780000,liab:798320000},
+  {ym:"22.07",rev:8330000,exp:9560000,asset:1527480000,liab:796730000},
+  {ym:"22.08",rev:5620000,exp:10080000,asset:1433650000,liab:794750000},
+  {ym:"22.09",rev:9740000,exp:8910000,asset:1413250000,liab:793350000},
+  {ym:"22.10",rev:5890000,exp:9050000,asset:1357960000,liab:791960000},
+  {ym:"22.11",rev:5620000,exp:7340000,asset:1333270000,liab:790560000},
+  {ym:"22.12",rev:9100000,exp:14450000,asset:1235380000,liab:789170000},
+  {ym:"23.01",rev:35640000,exp:12660000,asset:1243190000,liab:787770000},
+  {ym:"23.02",rev:8310000,exp:7850000,asset:1280640000,liab:786360000},
+  {ym:"23.03",rev:5640000,exp:7900000,asset:1331060000,liab:784960000},
+  {ym:"23.04",rev:5510000,exp:8190000,asset:1420420000,liab:783560000},
+  {ym:"23.05",rev:5400000,exp:8150000,asset:1428060000,liab:782150000},
+  {ym:"23.06",rev:6490000,exp:9750000,asset:1408000000,liab:780750000},
+  {ym:"23.07",rev:13640000,exp:8990000,asset:1412000000,liab:779340000},
+  {ym:"23.08",rev:13140000,exp:8140000,asset:1403340000,liab:777930000},
+  {ym:"23.09",rev:6210000,exp:8260000,asset:1401120000,liab:776510000},
+  {ym:"23.10",rev:13210000,exp:8350000,asset:1404000000,liab:775100000},
+  {ym:"23.11",rev:6210000,exp:7950000,asset:1434960000,liab:773680000},
+  {ym:"23.12",rev:8420000,exp:11570000,asset:1483840000,liab:772270000},
+  {ym:"24.01",rev:27510000,exp:13780000,asset:1080210000,liab:368850000},
+  {ym:"24.02",rev:6410000,exp:10950000,asset:1265470000,liab:553090000},
+  {ym:"24.03",rev:9650000,exp:9610000,asset:1288820000,liab:551630000},
+  {ym:"24.04",rev:6190000,exp:10970000,asset:1285390000,liab:550240000},
+  {ym:"24.05",rev:8260000,exp:10790000,asset:1224210000,liab:548810000},
+  {ym:"24.06",rev:10740000,exp:9550000,asset:1225640000,liab:547380000},
+  {ym:"24.07",rev:5760000,exp:10490000,asset:1257680000,liab:545960000},
+  {ym:"24.08",rev:7670000,exp:10040000,asset:1272120000,liab:541250000},
+  {ym:"24.09",rev:7230000,exp:11630000,asset:1254750000,liab:539810000},
+  {ym:"24.10",rev:7280000,exp:9420000,asset:1207670000,liab:538380000},
+  {ym:"24.11",rev:6260000,exp:9580000,asset:1167450000,liab:536940000},
+  {ym:"24.12",rev:8630000,exp:10450000,asset:1115510000,liab:535500000},
+  {ym:"25.01",rev:7290000,exp:11840000,asset:1139000000,liab:534060000},
+  {ym:"25.02",rev:10580000,exp:10910000,asset:1127960000,liab:532620000},
+  {ym:"25.03",rev:10560000,exp:10070000,asset:1111380000,liab:531180000},
+  {ym:"25.04",rev:8290000,exp:11640000,asset:1109150000,liab:529730000},
+  {ym:"25.05",rev:7900000,exp:13420000,asset:1163890000,liab:528280000},
+  {ym:"25.06",rev:7630000,exp:11320000,asset:1306580000,liab:526830000}
+];
+
+/* v6: 통합 카테고리 구조 — 원화/유로 항목을 한 화면에서 함께 관리 */
+const DSC_UNIFIED={
+  rev:[
+    {cat:"근로소득 (₩)",    items:["월급","개인연금(회사)","PS/복지","원화기본급","주거보조금(회사)","교육비지원(회사)"]},
+    {cat:"해외 수당 (€)",   items:["기본급(€)","해외근무수당(€)","기타수당(€)"]},
+    {cat:"부동산소득",      items:["월세수입(금호어울림)"]},
+    {cat:"투자·기타소득",   items:["이자/배당","주식수익(실현)","환차익","기타수익"]}
+  ],
+  exp:[
+    {cat:"고정비",          items:["연금납부","보험료","구독서비스","청약입금"]},
+    {cat:"주거비",          items:["주거비(도곡렉슬)"]},
+    {cat:"이자비용",        items:["신용대출이자","주택담보이자","GV70이자"]},
+    {cat:"원금상환",        items:["주택담보원금","GV70원금"]},
+    {cat:"교육/생활",       items:["교육비","생활비","변동비"]},
+    {cat:"현지 고정비 (€)", items:["주거비렌트(€)","현지세금(€)","현지보험(€)","자녀학교등록금(€)"]},
+    {cat:"현지 변동비 (€)", items:["식비/교통(€)","기타현지소비(€)"]},
+    {cat:"한국 송금",       items:["국내적금·투자송금","비상금적립"]}
+  ],
+  ast:[
+    {cat:"현금성자산 (₩)",  items:["현금(급여)","현금(보험)","현금(기타)","현금(국내)"]},
+    {cat:"현금 (€)",        items:["현금(현지€)"]},
+    {cat:"청약통장",        items:["청약(양상운)","청약(김정은)"]},
+    {cat:"투자자산",        items:["국내주식(미래에셋)","국내주식(키움)","해외주식/ETF"]},
+    {cat:"부동산",          items:["자가(금호어울림)","전세(도곡렉슬)"]},
+    {cat:"실물자산",        items:["자동차(GV70)"]},
+    {cat:"은퇴자산",        items:["개인연금(운용)","퇴직금"]}
+  ],
+  lib:[
+    {cat:"단기부채",        items:["신용카드"]},
+    {cat:"대출부채",        items:["신용대출","담보대출","자동차대출"]},
+    {cat:"임대부채",        items:["전세보증금(금호어울림)"]}
+  ]
+};
+
+/* 기본값 — 원 단위(원화) / € 단위(유로) */
+const DV_UNIFIED={
+  "__eur_rate__":1450,
+  "월급":6449000,"개인연금(회사)":213000,"PS/복지":0,
+  "원화기본급":0,"주거보조금(회사)":0,"교육비지원(회사)":0,
+  "기본급(€)":0,"해외근무수당(€)":0,"기타수당(€)":0,
+  "월세수입(금호어울림)":800000,
+  "이자/배당":0,"주식수익(실현)":0,"환차익":0,"기타수익":166000,
+  "연금납부":426000,"보험료":193000,"구독서비스":5000,"청약입금":40000,
+  "주거비(도곡렉슬)":3200000,
+  "신용대출이자":375000,"주택담보이자":654000,"GV70이자":21000,
+  "주택담보원금":595000,"GV70원금":854000,
+  "교육비":1901000,"생활비":2500000,"변동비":533000,
+  "주거비렌트(€)":0,"현지세금(€)":0,"현지보험(€)":0,"자녀학교등록금(€)":0,
+  "식비/교통(€)":0,"기타현지소비(€)":0,
+  "국내적금·투자송금":0,"비상금적립":0,
+  "현금(급여)":3500000,"현금(보험)":670000,"현금(기타)":1490000,"현금(국내)":0,
+  "현금(현지€)":0,
+  "청약(양상운)":4260000,"청약(김정은)":5100000,
+  "국내주식(미래에셋)":278720000,"국내주식(키움)":3500000,"해외주식/ETF":0,
+  "자가(금호어울림)":700000000,"전세(도곡렉슬)":150000000,
+  "자동차(GV70)":31000000,"개인연금(운용)":56390000,"퇴직금":128340000,
+  "신용카드":0,"신용대출":109000000,"담보대출":208320000,"자동차대출":9510000,
+  "전세보증금(금호어울림)":200000000
+};
+
+/* v7: 출국 전 체크리스트 제거됨 (일시적 scaffolding). 자금흐름 요약은 계획 조정 용도로 유지 */
+
+const TABS_ALL=["대시보드","월별입력","연도별","연간목표","계획·버킷","건전성"];
+const CC={rev:"#10b981",exp:"#ef4444",ast:"#3b82f6",lib:"#f59e0b"};
+const LL={rev:"수익",exp:"지출",ast:"자산",lib:"부채"};
+
+let AD={},SC,EM,VL={},CH={},CT=0;
+let BKT_TARGETS={},ITEM_TIPS={},MONTH_MEMOS={},YEAR_GOALS={};
+/* v7: 아카이브 (상환 완료 / 매각된 항목 — 입력 UI에서 숨기되 데이터·과거값 보존) */
+let ITEM_ARCHIVED={};   // {itemName: true}
+let SHOW_ARCHIVED=false; // 월별입력에서 아카이브 표시 여부
+
+/* v8: 자산 증식 관점 */
+let DASH_VIEW='growth'; // 'growth' | 'defense'
+let GOAL_PLAN={target:1500000000, years:5, returnRate:5}; // 목표 역산 기본값
+let SIM_RATE=5; // 대시보드 시뮬레이션 기대 수익률 (%)
+/* v6: period filter & plan config & simulation params */
+let PERIOD=12; // 3/6/12/0(전체)
+let PLAN_CFG={newJeonse:420000000};
+let SIM_CFG={monthlySave:null, annualReturn:3, months:60}; // monthlySave=null → auto
+/* v6: 월별입력 서브 뷰 — 'pl'=손익(수익·지출) | 'bs'=재무상태(자산·부채) */
+let INPUT_VIEW='pl';
+
+
+/* ── 숫자 포맷 (원 단위) ── */
+const commas=n=>Math.round(n).toLocaleString('ko-KR');
+const fmt=n=>{
+  if(n==null||isNaN(n))return"—";
+  const abs=Math.abs(n);
+  if(abs>=100000000) return (n/100000000).toFixed(1)+"억원";
+  if(abs>=10000000)  return (n/10000000).toFixed(1)+"천만원";
+  return commas(n)+"원";
+};
+const fmtFull=n=>n==null?"—":commas(n)+"원";
+
+const isEur=name=>name.endsWith('(€)');
+const getRate=()=>parseFloat(VL['__eur_rate__']||1450);
+const toKRW=(name,val)=>isEur(name)?val*getRate():val;
+const ss=s=>SC[s].reduce((a,g)=>a+g.items.filter(i=>i!=='__eur_rate__').reduce((b,i)=>b+toKRW(i,parseFloat(VL[i])||0),0),0);
+const TABS=()=>TABS_ALL;
+
+function sGet(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null}catch(e){return null}}
+function sSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+
+/* ── v6: 입력 포맷 헬퍼 (Feat 7) ── */
+const fmtInput=v=>(v==null||v===''||isNaN(parseFloat(v)))?'':Number(String(v).replace(/,/g,'')).toLocaleString('ko-KR');
+const parseInput=v=>parseFloat(String(v).replace(/,/g,''))||0;
+
+/* ── v6: 자금 흐름 계획 동적 계산 (Bug 1) ── */
+function computePlan(){
+  const dogok=parseFloat(VL["전세(도곡렉슬)"]||0);
+  const geumhoOld=parseFloat(VL["전세보증금(금호어울림)"]||0);
+  const geumhoNew=parseFloat(PLAN_CFG.newJeonse||0);
+  const loanKeys=["신용대출","담보대출","자동차대출"];
+  const perLoan=loanKeys.map(k=>({k,v:parseFloat(VL[k]||0)}));
+  const recover=dogok+(geumhoNew-geumhoOld);
+  const clearDebt=perLoan.reduce((s,x)=>s+x.v,0);
+  return{dogok,geumhoOld,geumhoNew,recover,clearDebt,remain:recover-clearDebt,perLoan};
+}
+
+/* ── v6: DSR 월 부채상환 동적 합산 (Bug 2) ── */
+function computeMonthlyDebt(){
+  const cats=SC.exp.filter(g=>g.cat.includes("이자")||g.cat.includes("원금"));
+  return cats.reduce((s,g)=>s+g.items.filter(i=>i!=='__eur_rate__')
+    .reduce((a,i)=>a+toKRW(i,parseFloat(VL[i])||0),0),0);
+}
+
+/* ── v6: 전월 대비 델타 렌더 (Feat 4) ── */
+function deltaBadge(cur,prev,invert){
+  if(prev==null||prev===0||cur==null)return'';
+  const d=cur-prev;
+  if(d===0)return`<span class="dlt flat">─ 전월동일</span>`;
+  const pct=(d/Math.abs(prev)*100).toFixed(1);
+  const good=invert?d<0:d>0;
+  const cls=good?'up':'dn';
+  const arrow=d>0?'▲':'▼';
+  return`<span class="dlt ${cls}">${arrow} ${fmt(Math.abs(d))} (${Math.abs(pct)}%)</span>`;
+}
+
+/* ─── v8: 복리·목표역산·증식 지표 헬퍼 ────────────── */
+
+// 복리 미래가치: PV + PMT(월저축)을 연수익률 r%로 N개월 굴렸을 때
+function compoundFV(pv,pmt,annualRate,months){
+  const r=annualRate/100/12;
+  if(r===0||!isFinite(r))return pv+pmt*months;
+  const g=Math.pow(1+r,months);
+  return pv*g+pmt*(g-1)/r;
+}
+// 역산: 목표 FV 달성에 필요한 월 저축액
+function requiredPmt(pv,fv,annualRate,months){
+  const r=annualRate/100/12;
+  if(r===0||!isFinite(r))return (fv-pv)/months;
+  const g=Math.pow(1+r,months);
+  return (fv-pv*g)*r/(g-1);
+}
+// 역산: 현재 PMT·PV로 목표 FV 달성에 필요한 연수익률 (이분법)
+function requiredRate(pv,pmt,fv,months){
+  if(pv>=fv)return 0;
+  if(months<=0)return Infinity;
+  let lo=-10,hi=30;
+  for(let i=0;i<60;i++){
+    const mid=(lo+hi)/2;
+    const f=compoundFV(pv,pmt,mid,months);
+    if(f<fv)lo=mid;else hi=mid;
+  }
+  return (lo+hi)/2;
+}
+// 72의 법칙 — 연수익률로 자산 2배 되는 연수
+function yearsToDouble(rate){return rate>0?72/rate:null}
+
+// 자산 증가 원천 분해: 각 월별 ΔNW = 순수익(저축) + 자본이득(잔여)
+function growthAttribution(tl){
+  return tl.map((d,i)=>{
+    if(i===0)return{ym:d.ym,save:0,gain:0,total:0};
+    const prev=tl[i-1];
+    const dNw=d.nw-prev.nw;
+    const save=d.ni;
+    const gain=dNw-save;
+    return{ym:d.ym,save,gain,total:dNw};
+  });
+}
+
+// 수동 소득 비율 (월세·이자·배당 ÷ 월 지출)
+function passiveIncomeRatio(lt){
+  if(!lt||lt.exp===0)return{passive:0,exp:0,ratio:0,rental:0,invest:0};
+  const rental=catTotal('rev','부동산소득');
+  // 투자·기타소득 카테고리 중 "기타수익"은 진짜 수동 소득 아니므로 제외
+  const invCat=SC.rev.find(g=>g.cat.includes('투자'));
+  let invest=0;
+  if(invCat){
+    invCat.items.filter(i=>i!=='__eur_rate__'&&!i.includes('기타')).forEach(i=>{
+      invest+=toKRW(i,parseFloat(VL[i])||0);
+    });
+  }
+  const passive=rental+invest;
+  return{passive,exp:lt.exp,ratio:passive/lt.exp,rental,invest};
+}
+
+// 저축률 최근 12개월 시계열
+function savingsRateSeries(tl){
+  return tl.slice(-12).map(d=>({ym:d.ym,rate:d.rev>0?(d.ni/d.rev):0,ni:d.ni,rev:d.rev}));
+}
+
+// 카테고리 × 월 지출 히트맵 매트릭스 (최근 12개월)
+function expenseHeatmap(tl){
+  const months=tl.slice(-12);
+  const cats=SC.exp.map(g=>g.cat);
+  const rate=getRate();
+  const matrix=cats.map(cat=>{
+    const g=SC.exp.find(x=>x.cat===cat);
+    const row={cat,cells:[]};
+    months.forEach(m=>{
+      const vals=AD[m.ym]?.vals||{};
+      let sum=0;
+      if(g){
+        g.items.filter(i=>i!=='__eur_rate__').forEach(i=>{
+          const v=parseFloat(vals[i])||0;
+          sum+=isEur(i)?v*(parseFloat(vals['__eur_rate__'])||rate):v;
+        });
+      }
+      row.cells.push({ym:m.ym,v:sum});
+    });
+    // 총합 제로인 카테고리는 제외
+    row.total=row.cells.reduce((s,c)=>s+c.v,0);
+    return row;
+  }).filter(r=>r.total>0);
+  // 각 행 내 최댓값 기준으로 색상 강도 계산
+  matrix.forEach(r=>{
+    const rMax=Math.max(...r.cells.map(c=>c.v),1);
+    r.cells.forEach(c=>{c.intensity=rMax>0?c.v/rMax:0;});
+  });
+  return{months,matrix};
+}
+
+// 유휴 현금 (비상자금 6개월 초과분 → 투자 기회비용)
+function idleCashAlert(lt){
+  if(!lt)return{cash:0,need:0,excess:0,annualOpp:0};
+  const cash=catTotalIncludes('ast','현금');
+  const need=lt.exp*6;
+  const excess=Math.max(0,cash-need);
+  return{cash,need,excess,annualOpp:excess*0.05};
+}
+
+// 오늘의 행동 제안 — 상태 기반 최우선 1건
+function todaysAction(tl,lt){
+  if(!lt)return null;
+  const ni=lt.rev-lt.exp;
+  const sr=lt.rev>0?ni/lt.rev:-1;
+  const pir=passiveIncomeRatio(lt);
+  const idle=idleCashAlert(lt);
+  const cash=catTotalIncludes('ast','현금');
+  const emonths=lt.exp>0?cash/lt.exp:0;
+
+  // 우선순위 1: 순수익 적자 → 지출 줄이기
+  if(ni<0){
+    const top=topExpenses(3);
+    const target=top[0];
+    const need=Math.abs(ni);
+    return{
+      icon:'🎯',
+      tag:'이번 달 최우선',
+      title:'적자 탈출 — 지출 구조 점검',
+      body:`순수익 <b>${fmt(ni)}</b> 적자. 최대 지출 <b>${target?target.item.replace(/\s*\(€\)\s*$/,''):'—'}</b> 등에서 <b>${fmt(need)}</b> 절감하면 흑자 전환.`,
+      cta:`월지출 10% 감소 시 → 연 <b>${fmt(lt.exp*.1*12)}</b> 추가 저축 가능`
+    };
+  }
+  // 우선순위 2: 비상자금 < 3개월
+  if(emonths<3){
+    return{
+      icon:'🛡️',
+      tag:'방어 우선',
+      title:'비상자금 먼저 쌓기',
+      body:`현재 비상자금 <b>${emonths.toFixed(1)}개월분</b>. 투자보다 현금 확보가 우선 — 최소 3~6개월 목표.`,
+      cta:`목표 6개월까지 <b>${fmt(lt.exp*6-cash)}</b> 추가 필요`
+    };
+  }
+  // 우선순위 3: 유휴 현금 큼 → 투자 기회
+  if(idle.excess>50000000){
+    return{
+      icon:'💰',
+      tag:'기회비용',
+      title:'유휴 현금 투자 이동',
+      body:`비상자금(6개월분) 초과 <b>${fmt(idle.excess)}</b>이 예금에 잠자고 있습니다. 연 수익률 격차가 누적되면 큰 손실.`,
+      cta:`연 5% 운용 시 → 연 <b>${fmt(idle.annualOpp)}</b> 추가 수익 확보`
+    };
+  }
+  // 우선순위 4: 저축률 20% 미달
+  if(sr<0.2&&sr>=0){
+    const gap=(0.2-sr)*lt.rev;
+    return{
+      icon:'📈',
+      tag:'습관 개선',
+      title:`저축률 ${(sr*100).toFixed(1)}% → 20% 도전`,
+      body:`목표까지 월 <b>${fmt(gap)}</b> 더 저축 필요. 작은 고정비부터 줄이는 것이 효과적.`,
+      cta:`20% 달성 시 → 연 <b>${fmt(0.2*lt.rev*12-ni*12)}</b> 추가 자산 축적`
+    };
+  }
+  // 우선순위 5: 수동 소득 낮음
+  if(pir.ratio<0.1){
+    return{
+      icon:'🏦',
+      tag:'증식 전략',
+      title:'수동 소득 키우기',
+      body:`월세·이자·배당 비율 <b>${(pir.ratio*100).toFixed(1)}%</b>. 장기적으로 자산이 지출을 커버하는 구조로 전환 필요.`,
+      cta:`배당주·월세 수익 부동산 비중 늘리기 검토`
+    };
+  }
+  // 기본 — 복리 강조
+  const avg=tl.slice(-6).length?tl.slice(-6).reduce((s,d)=>s+d.ni,0)/tl.slice(-6).length:0;
+  const fv5=compoundFV(lt.nw,avg,5,60);
+  return{
+    icon:'🚀',
+    tag:'꾸준함의 힘',
+    title:'복리의 마법',
+    body:`현재 페이스 + 연 5% 수익률 유지 시 5년 후 순자본 약 <b>${fmt(fv5)}</b>.`,
+    cta:`월 저축 10%만 늘려도 5년 누적 차이 크게 벌어짐`
+  };
+}
+
+/* ─── v7: 인사이트 계산 헬퍼 ─────────────────────── */
+
+// 카테고리 소계(원화 환산)
+function catTotal(s,catName){
+  const g=SC[s].find(x=>x.cat===catName);
+  if(!g)return 0;
+  return g.items.filter(i=>i!=='__eur_rate__').reduce((a,i)=>a+toKRW(i,parseFloat(VL[i])||0),0);
+}
+function catTotalIncludes(s,sub){
+  return SC[s].filter(g=>g.cat.includes(sub)).reduce((s2,g)=>s2+g.items.filter(i=>i!=='__eur_rate__')
+    .reduce((a,i)=>a+toKRW(i,parseFloat(VL[i])||0),0),0);
+}
+function sumItems(keys){return keys.reduce((s,k)=>s+toKRW(k,parseFloat(VL[k])||0),0);}
+
+// 자산 구성 (6버킷)
+function assetAllocation(){
+  const cash=catTotalIncludes('ast','현금');
+  const saving=catTotal('ast','청약통장');
+  const invest=catTotal('ast','투자자산');
+  const realEst=catTotal('ast','부동산');
+  const phys=catTotal('ast','실물자산');
+  const retire=catTotal('ast','은퇴자산');
+  const total=cash+saving+invest+realEst+phys+retire;
+  return{total,buckets:[
+    {name:'현금성',      v:cash,    c:'#10b981'},
+    {name:'청약',        v:saving,  c:'#14b8a6'},
+    {name:'투자(주식)',  v:invest,  c:'#3b82f6'},
+    {name:'부동산',      v:realEst, c:'#f59e0b'},
+    {name:'실물(차량)',  v:phys,    c:'#a78bfa'},
+    {name:'은퇴자산',    v:retire,  c:'#06b6d4'}
+  ].filter(b=>b.v>0)};
+}
+
+// 현금흐름 Waterfall (월)
+function cashflowBreakdown(){
+  const rev=ss('rev');
+  const fixed=catTotal('exp','고정비');
+  const housing=catTotal('exp','주거비');
+  const interest=catTotal('exp','이자비용');
+  const principal=catTotal('exp','원금상환');
+  const living=catTotal('exp','교육/생활');
+  const localFx=catTotal('exp','현지 고정비 (€)')+catTotal('exp','현지 변동비 (€)');
+  const send=catTotal('exp','한국 송금');
+  const totalExp=ss('exp');
+  const remain=rev-totalExp;
+  return{rev,steps:[
+    {n:'수익',      v:rev,       c:'#10b981', kind:'in'},
+    {n:'고정비',    v:fixed,     c:'#ef4444', kind:'out'},
+    {n:'주거비',    v:housing,   c:'#f97316', kind:'out'},
+    {n:'이자비용',  v:interest,  c:'#f59e0b', kind:'out'},
+    {n:'원금상환',  v:principal, c:'#eab308', kind:'out'},
+    {n:'교육/생활', v:living,    c:'#8b5cf6', kind:'out'},
+    {n:'현지 소비', v:localFx,   c:'#a855f7', kind:'out'},
+    {n:'한국 송금', v:send,      c:'#06b6d4', kind:'out'},
+    {n:'순수익(잔여)', v:remain, c:remain>=0?'#06b6d4':'#ef4444', kind:'net'}
+  ].filter(x=>x.v!==0||x.kind==='net')};
+}
+
+// 지출 TOP N (전월 대비 델타 포함)
+function topExpenses(n=6){
+  const rows=[];
+  SC.exp.forEach(g=>{
+    g.items.filter(i=>i!=='__eur_rate__').forEach(i=>{
+      const v=toKRW(i,parseFloat(VL[i])||0);
+      if(v>0)rows.push({item:i,cat:g.cat,v});
+    });
+  });
+  // 전월 데이터에서 같은 항목 조회
+  const tl=getTL();
+  const prevEntry=tl.length>=2?AD[tl[tl.length-2].ym]:null;
+  const prevVL=prevEntry?.vals||{};
+  rows.forEach(r=>{
+    const pv=prevVL[r.item]!=null?toKRW(r.item,parseFloat(prevVL[r.item])||0):null;
+    r.prev=pv;r.delta=pv!=null?r.v-pv:null;
+  });
+  return rows.sort((a,b)=>b.v-a.v).slice(0,n);
+}
+
+// 재무 건전성 종합 점수 (0~100)
+function healthScore(lt){
+  if(!lt)return{score:0,grade:'—',breakdown:[]};
+  const cash=catTotalIncludes('ast','현금');
+  const ni=lt.rev-lt.exp;
+  const mDebt=computeMonthlyDebt();
+  const emonths=lt.exp>0?cash/lt.exp:0;
+  const debtRatio=lt.nw>0?lt.liab/lt.nw:99;
+  const nwRatio=lt.asset>0?lt.nw/lt.asset:0;
+  const saveRate=lt.rev>0?ni/lt.rev:-1;
+  const dsr=lt.rev>0?mDebt/lt.rev:1;
+
+  const items=[
+    {n:'비상자금',    raw:emonths,   max:25, f:v=>v.toFixed(1)+'개월',
+      score:emonths>=6?25:emonths>=3?18:emonths>=1?8:0,
+      pct:Math.min(100,emonths/6*100), c:'#10b981'},
+    {n:'저축률',      raw:saveRate,  max:25, f:v=>(v*100).toFixed(1)+'%',
+      score:saveRate>=.2?25:saveRate>=.1?15:saveRate>=0?8:0,
+      pct:Math.max(0,Math.min(100,(saveRate+.1)/.3*100)), c:'#06b6d4'},
+    {n:'부채비율',    raw:debtRatio, max:20, f:v=>(v*100).toFixed(1)+'%',
+      score:debtRatio<=.5?20:debtRatio<=1?14:debtRatio<=1.5?7:0,
+      pct:Math.max(0,Math.min(100,(1.5-debtRatio)/1.5*100)), c:'#f59e0b'},
+    {n:'순자본비율',  raw:nwRatio,   max:20, f:v=>(v*100).toFixed(1)+'%',
+      score:nwRatio>=.5?20:nwRatio>=.3?12:nwRatio>=.1?5:0,
+      pct:Math.min(100,nwRatio*200), c:'#3b82f6'},
+    {n:'DSR',         raw:dsr,       max:10, f:v=>(v*100).toFixed(1)+'%',
+      score:dsr<=.3?10:dsr<=.4?6:dsr<=.6?3:0,
+      pct:Math.max(0,Math.min(100,(.6-dsr)/.6*100)), c:'#a78bfa'}
+  ];
+  const total=items.reduce((s,x)=>s+x.score,0);
+  const grade=total>=80?'A':total>=65?'B':total>=50?'C':total>=35?'D':'F';
+  const color=total>=80?'#10b981':total>=65?'#06b6d4':total>=50?'#f59e0b':total>=35?'#f97316':'#ef4444';
+  return{score:total,grade,color,breakdown:items};
+}
+
+// 마일스톤 진척
+function milestones(tl,lt){
+  if(!lt)return[];
+  const cash=catTotalIncludes('ast','현금');
+  const invest=catTotal('ast','투자자산')+catTotal('ast','은퇴자산')+catTotal('ast','청약통장');
+  const realEst=catTotal('ast','부동산');
+  const annualExp=lt.exp*12;
+  const fireNeed=annualExp*25; // 4% rule
+  const investable=lt.nw-realEst; // 자가·전세 제외
+  return[
+    {label:'비상자금 6개월',val:cash,target:lt.exp*6,c:'#10b981',
+      sub:`현금 ${fmt(cash)} / 월지출×6 ${fmt(lt.exp*6)}`},
+    {label:'FIRE (4% rule)',val:investable,target:fireNeed,c:'#3b82f6',
+      sub:`투자가능자본 ${fmt(investable)} / 필요 ${fmt(fireNeed)}`},
+    {label:'부채 전액 상환',val:Math.max(0,(VL['신용대출']||0)+(VL['담보대출']||0)+(VL['자동차대출']||0)),
+      target:(VL['신용대출']||0)+(VL['담보대출']||0)+(VL['자동차대출']||0)||1,
+      c:'#ef4444',invert:true,
+      sub:`남은 대출 원금`}
+  ];
+}
+
+// 자동 진단 한 줄씩 (이달의 인사이트)
+function generateDiagnosis(tl,lt){
+  if(!lt)return[{kind:'info',icon:'ℹ️',text:'데이터 입력 후 진단이 표시됩니다'}];
+  const lines=[];
+  const ni=lt.rev-lt.exp;
+  const cash=catTotalIncludes('ast','현금');
+  const emonths=lt.exp>0?cash/lt.exp:0;
+  const saveRate=lt.rev>0?ni/lt.rev:-1;
+  const debtRatio=lt.nw>0?lt.liab/lt.nw:0;
+
+  // 1. 순수익 상태 — 가장 중요
+  if(ni<0){
+    const burnMonths=cash>0?Math.abs(cash/ni).toFixed(1):'—';
+    lines.push({kind:'bad',icon:'🔴',text:`이달 순수익 <b>${fmt(ni)}</b> — 이 페이스가 지속되면 현금 <b>${burnMonths}개월</b> 후 소진`});
+  } else if(saveRate>=.2){
+    lines.push({kind:'good',icon:'🟢',text:`저축률 <b>${(saveRate*100).toFixed(1)}%</b> — 권장 20% 이상, 훌륭한 페이스`});
+  } else if(saveRate>=0){
+    lines.push({kind:'warn',icon:'🟡',text:`저축률 <b>${(saveRate*100).toFixed(1)}%</b> — 흑자 유지 중이나 20% 목표 미달`});
+  }
+
+  // 2. 비상자금
+  if(emonths<3){
+    lines.push({kind:'warn',icon:'⚠️',text:`비상자금 <b>${emonths.toFixed(1)}개월분</b> — WHO 권장 3~6개월 대비 부족, 현금 확보 필요`});
+  } else if(emonths>=6){
+    lines.push({kind:'good',icon:'✅',text:`비상자금 <b>${emonths.toFixed(1)}개월분</b> — 충분, 초과분은 투자 이동 고려 가능`});
+  }
+
+  // 3. 자산 구성 편중
+  const alloc=assetAllocation();
+  if(alloc.total>0){
+    const realEst=alloc.buckets.find(b=>b.name==='부동산');
+    const reShare=realEst?realEst.v/alloc.total*100:0;
+    if(reShare>65){
+      lines.push({kind:'warn',icon:'🏠',text:`부동산 비중 <b>${reShare.toFixed(1)}%</b> — 포트폴리오 편중, 유동성 점검 필요`});
+    }
+  }
+
+  // 4. 지출 증가 감지 — 전월 대비 TOP 증가 항목
+  const topExp=topExpenses(20);
+  const increased=topExp.filter(r=>r.delta!=null&&r.delta>100000).sort((a,b)=>b.delta-a.delta)[0];
+  if(increased){
+    lines.push({kind:'info',icon:'📈',text:`이달 <b>${increased.item.replace(/\s*\(€\)\s*$/,'')}</b> 전월 대비 <b>+${fmt(increased.delta)}</b> 증가`});
+  }
+
+  // 5. 부채비율
+  if(debtRatio>1){
+    lines.push({kind:'warn',icon:'💸',text:`부채비율 <b>${(debtRatio*100).toFixed(1)}%</b> — 순자본 대비 부채 과다, 상환 가속 권장`});
+  }
+
+  // 6. 대출 상환 여력 (상환 시 월 부담 소멸 효과)
+  const plan=computePlan();
+  if(plan.clearDebt>0){
+    const monthlySaved=computeMonthlyDebt();
+    lines.push({kind:'info',icon:'💡',text:`대출 전액 상환 시 → 월 <b>${fmt(monthlySaved)}</b> 이자·원금 부담 소멸 (현재 잔액 ${fmt(plan.clearDebt)})`});
+  }
+
+  // 7. 순자본 추세
+  if(tl.length>=12){
+    const y0=tl[tl.length-12].nw,y1=lt.nw;
+    const growth=y0!==0?((y1-y0)/Math.abs(y0)*100):0;
+    const absAmt=y1-y0;
+    if(Math.abs(growth)>=3){
+      const icon=growth>0?'📊':'📉';
+      const kind=growth>0?'good':'bad';
+      lines.push({kind,icon,text:`최근 12개월 순자본 <b>${growth>0?'+':''}${growth.toFixed(1)}%</b> (${fmt(absAmt)})`});
+    }
+  }
+
+  return lines.slice(0,6);
+}
+
+/* 월 목록 — 통합 (25.07 ~ 30.12) */
+function getMonths(){
+  const out=[];
+  for(let y=2025,m=7;;){
+    out.push(`${String(y).slice(2)}.${String(m).padStart(2,'0')}`);
+    if(y===2030&&m===12)break;
+    m++;if(m>12){m=1;y++;}
+  }
+  return out;
+}
+
+function sync(){document.querySelectorAll("[data-k]").forEach(el=>{VL[el.dataset.k]=String(el.value).replace(/,/g,'')})}
+function loadM(m){EM=m;const e=AD[m];VL=e?.vals?{...e.vals}:{...DV_UNIFIED}}
+
+function doSave(){
+  sync();
+  AD[EM]={rev:Math.round(ss("rev")),exp:Math.round(ss("exp")),asset:Math.round(ss("ast")),liab:Math.round(ss("lib")),vals:{...VL}};
+  sSet('fd_all',AD);
+  sSet('fs_unified',SC);
+  draw();
+  setTimeout(()=>{const e=document.getElementById("sm");if(e){e.textContent="✓ 저장완료";setTimeout(()=>{if(e)e.textContent=""},2000)}},50);
+}
+
+function addC(s){const n=prompt("새 카테고리:");if(!n?.trim())return;sync();SC[s].push({cat:n.trim(),items:[]});saveSC();draw()}
+function renC(s,i){const n=prompt("이름:",SC[s][i].cat);if(!n?.trim())return;sync();SC[s][i].cat=n.trim();saveSC();draw()}
+function delC(s,i){if(!confirm(SC[s][i].cat+" 삭제?"))return;sync();SC[s].splice(i,1);saveSC();draw()}
+function addI(s,g){const n=prompt("새 항목:");if(!n?.trim())return;sync();SC[s][g].items.push(n.trim());saveSC();draw()}
+function renI(s,g,i){const o=SC[s][g].items[i],n=prompt("이름:",o);if(!n?.trim())return;sync();SC[s][g].items[i]=n.trim();if(o!==n.trim()){VL[n.trim()]=VL[o]||0;delete VL[o]}saveSC();draw()}
+function delI(s,g,i){sync();SC[s][g].items.splice(i,1);saveSC();draw()}
+function selM(m){sync();loadM(m);draw()}
+function setT(i){CT=i;Object.values(CH).forEach(c=>c.destroy());CH={};draw()}
+function saveSC(){sSet('fs_unified',SC);sSet('fd_all',AD);}
+function saveBktTarget(idx,val){BKT_TARGETS[idx]=parseFloat(val)||0;sSet('bkt_targets',BKT_TARGETS);draw()}
+/* v7: 아카이브 — 스키마·과거값은 유지, 현재 입력 UI에서만 숨김 */
+function toggleArchive(it){
+  sync();
+  ITEM_ARCHIVED[it]=!ITEM_ARCHIVED[it];
+  sSet('item_archived',ITEM_ARCHIVED);
+  d1();
+}
+function toggleShowArchived(){SHOW_ARCHIVED=!SHOW_ARCHIVED;d1();}
+function countArchived(){
+  let n=0;
+  ['rev','exp','ast','lib'].forEach(s=>SC[s].forEach(g=>g.items.forEach(i=>{if(ITEM_ARCHIVED[i])n++;})));
+  return n;
+}
+function saveTip(key,val){ITEM_TIPS[key]=val;sSet('item_tips',ITEM_TIPS)}
+function saveMonthMemo(val){
+  MONTH_MEMOS[EM]=val;
+  sSet('mm_all',MONTH_MEMOS);
+}
+function toggleCurrency(s,gi,ii){
+  sync();
+  const it=SC[s][gi].items[ii];
+  const wasEur=isEur(it);
+  const newName=wasEur?it.replace(/\(€\)\s*$/,'').trim():it.trimEnd()+' (€)';
+  const oldVal=VL[it];
+  SC[s][gi].items[ii]=newName;
+  VL[newName]=oldVal||0;
+  if(it!==newName)delete VL[it];
+  // tip key 이전
+  const oldTip=ITEM_TIPS[`tip__${it}`];
+  if(oldTip){ITEM_TIPS[`tip__${newName}`]=oldTip;delete ITEM_TIPS[`tip__${it}`];sSet('item_tips',ITEM_TIPS);}
+  saveSC();draw();
+}
+
+function getTL(){
+  // 히스토리 + 저장된 모든 달 통합
+  const histYms=new Set(HIST.map(h=>h.ym));
+  const allYms=new Set([...HIST.map(h=>h.ym),...Object.keys(AD),...getMonths()]);
+  return[...allYms].sort().map(ym=>{
+    const d=AD[ym]||{};const h=HIST.find(x=>x.ym===ym)||{};
+    return{ym,rev:d.rev||h.rev||0,exp:d.exp||h.exp||0,ni:(d.rev||h.rev||0)-(d.exp||h.exp||0),asset:d.asset||h.asset||0,liab:d.liab||h.liab||0,nw:(d.asset||h.asset||0)-(d.liab||h.liab||0)}
+  }).filter(d=>d.rev||d.exp||d.asset)
+}
+function getYears(tl){return[...new Set(tl.map(d=>d.ym.slice(0,2)))].sort()}
+function getYearData(tl,yr){return tl.filter(d=>d.ym.startsWith(yr))}
+function yearSummary(months){
+  return{
+    rev:months.reduce((a,d)=>a+d.rev,0),
+    exp:months.reduce((a,d)=>a+d.exp,0),
+    ni:months.reduce((a,d)=>a+d.ni,0),
+    asset:months[months.length-1]?.asset||0,
+    liab:months[months.length-1]?.liab||0,
+    nw:months[months.length-1]?.nw||0,
+  }
+}
+
+function kpi(l,v,c,sub,w,dlt){
+  return`<div class="kp${w?" w":""}"><small>${l}</small><strong style="color:${c}">${v}</strong>${sub?`<div class="sub">${sub}</div>`:""}${dlt||""}</div>`;
+}
+function setPeriod(n){PERIOD=n;Object.values(CH).forEach(c=>c.destroy());CH={};draw();}
+function setInputView(v){INPUT_VIEW=v;d1();}
+function setDashView(v){DASH_VIEW=v;Object.values(CH).forEach(c=>c.destroy());CH={};draw();}
+function setSimRate(r){SIM_RATE=r;Object.values(CH).forEach(c=>c.destroy());CH={};draw();}
+function setGoal(field,val){
+  GOAL_PLAN[field]=val;
+  sSet('goal_plan',GOAL_PLAN);
+  draw();
+}
+
+function draw(){
+  const tl=getTL(),lt=tl.length?tl[tl.length-1]:null;
+  const tabs=TABS();
+  document.getElementById("hs").innerHTML=lt?[["자산",fmt(lt.asset),"var(--blue)"],["부채",fmt(lt.liab),"var(--red)"],["순자본",fmt(lt.nw),"var(--cyan)"]].map(([l,v,c])=>`<div><small>${l}</small><b style="color:${c}">${v}</b></div>`).join(""):"";
+  document.getElementById("tabs").innerHTML=tabs.map((t,i)=>`<button class="${i===CT?"on":""}" onclick="setT(${i})">${t}</button>`).join("");
+  document.getElementById("mn").innerHTML=tabs.map((_,i)=>`<div class="pg${CT===i?" on":""}" id="p${i}"></div>`).join("");
+  [d0,d1,dYearly,dAnnualGoals,dMilestones,d3][CT](tl,lt);
+  // v7: 체크리스트 제거됨 — progress-info 비움
+  const pi=document.getElementById('progress-info');
+  if(pi)pi.textContent='';
+}
+
+/* ══ 탭0: 대시보드 (v8 — 증식/방어 관점 이중 레이아웃) ══ */
+function d0(tl,lt){
+  if(!lt)return;
+  const p=document.getElementById("p0"),ni=lt.rev-lt.exp;
+  const prev=tl.length>=2?tl[tl.length-2]:null;
+  const cash=catTotalIncludes('ast','현금');
+  const em=lt.exp>0?(cash/lt.exp).toFixed(1):"—";
+  const dr=lt.nw>0?(lt.liab/lt.nw*100).toFixed(1):"—";
+  const sr=lt.rev>0?(ni/lt.rev*100).toFixed(1):"—";
+  const re=catTotal('ast','부동산');
+  const investable=lt.nw-re;
+  const prevNi=prev?prev.rev-prev.exp:null;
+
+  // ── A. 오늘의 행동 제안 (최상단 · 모든 관점 공통) ──
+  const action=todaysAction(tl,lt);
+  let h='';
+  if(action){
+    h+=`<div class="action-card">
+      <span class="tag">${action.tag}</span>
+      <h3><span class="icon">${action.icon}</span>${action.title}</h3>
+      <div class="body">${action.body}</div>
+      <div class="cta">${action.cta}</div>
+    </div>`;
+  }
+
+  // ── B. 이달의 진단 ──
+  const diag=generateDiagnosis(tl,lt);
+  h+=`<div class="diag-card">
+    <div class="title">🧭 ${lt.ym} 이달의 진단</div>
+    ${diag.map(d=>`<div class="line ${d.kind}"><span class="icon">${d.icon}</span><span>${d.text}</span></div>`).join('')}
+  </div>`;
+
+  // ── C. 관점 토글 ──
+  h+=`<div class="view-toggle-wrap">
+    <div class="view-toggle">
+      <button class="${DASH_VIEW==='growth'?'on growth':''}" onclick="setDashView('growth')">🚀 증식 관점</button>
+      <button class="${DASH_VIEW==='defense'?'on defense':''}" onclick="setDashView('defense')">🛡️ 방어 관점</button>
+    </div>
+    <span class="hint">${DASH_VIEW==='growth'?'자산을 어떻게 키울 것인가':'위험·건전성 점검'}</span>
+  </div>`;
+
+  // ── D. KPI 6개 ──
+  h+=`<div class="rw">
+    ${kpi("자산",fmt(lt.asset),"var(--blue)",null,false,deltaBadge(lt.asset,prev?.asset))}
+    ${kpi("부채",fmt(lt.liab),"var(--red)",null,false,deltaBadge(lt.liab,prev?.liab,true))}
+    ${kpi("순자본",fmt(lt.nw),"var(--cyan)","부채비율 "+dr+"%",false,deltaBadge(lt.nw,prev?.nw))}
+    ${kpi("순수익",fmt(ni),ni>=0?"var(--grn)":"var(--red)","저축률 "+sr+"%",ni<0,deltaBadge(ni,prevNi))}
+    ${kpi("투자가능자본",fmt(investable),"var(--pur)","순자본−부동산")}
+    ${kpi("비상자금",em+"개월",parseFloat(em)<3?"var(--red)":"var(--grn)","현금÷월지출",parseFloat(em)<3)}
+  </div>`;
+
+  if(DASH_VIEW==='growth'){
+    /* ─────────────── 증식 관점 ─────────────── */
+
+    // 1. 자산 증가 원천 분해
+    const attrib=growthAttribution(tl).slice(-12);
+    const attTot=attrib.reduce((a,b)=>({save:a.save+b.save,gain:a.gain+b.gain,total:a.total+b.total}),{save:0,gain:0,total:0});
+    h+=`<div class="attrib-card">
+      <div class="attrib-hd">📊 자산 증가 원천 분해 <span style="margin-left:auto;font-size:var(--fs-xs);color:var(--t3);font-weight:600">최근 12개월</span></div>
+      <div class="attrib-bd">
+        <div class="attrib-summary">
+          <div class="attrib-box"><div class="lbl">저축 (소득)</div><div class="val" style="color:var(--grn)">${fmt(attTot.save)}</div><div class="sub">순수익 합계</div></div>
+          <div class="attrib-box"><div class="lbl">자본 이득/손실</div><div class="val" style="color:${attTot.gain>=0?'var(--blue)':'var(--red)'}">${attTot.gain>=0?'+':''}${fmt(attTot.gain)}</div><div class="sub">시세·평가손익 등</div></div>
+          <div class="attrib-box"><div class="lbl">순자본 증가</div><div class="val" style="color:var(--cyan)">${attTot.total>=0?'+':''}${fmt(attTot.total)}</div><div class="sub">ΔNW = 저축 + 자본이득</div></div>
+        </div>
+        <div class="attrib-chart"><canvas id="cAttrib"></canvas></div>
+        <div style="font-size:var(--fs-xs);color:var(--t3);margin-top:10px;line-height:1.6">💡 <b style="color:var(--t2)">저축</b>이 꾸준히 큰 비중이면 건강한 성장. <b style="color:var(--t2)">자본이득</b> 의존이 크면 시장 출렁임에 흔들림</div>
+      </div>
+    </div>`;
+
+    // 2. 수동 소득 비율
+    const pir=passiveIncomeRatio(lt);
+    const pirPct=Math.min(100,pir.ratio*100);
+    const fireNeed=pir.exp>0?(pir.exp-pir.passive)*12*25:0; // 월 갭 × 25년치
+    h+=`<div class="pir-card">
+      <div class="tit">💰 수동 소득 비율 (Passive Income Ratio) — 진짜 FIRE 지표</div>
+      <div class="pir-main">
+        <div class="pir-pct">${(pir.ratio*100).toFixed(1)}<small>%</small></div>
+        <div>
+          <div class="pir-meaning">월 지출 <b>${fmt(pir.exp)}</b> 중 <b>${fmt(pir.passive)}</b>가 자산이 만들어주고 있음.
+            ${pir.ratio>=1?' <b>완전 FIRE 달성!</b> 자산이 지출을 전부 커버합니다.':
+              pir.ratio>=.5?' 자산이 지출의 절반 이상을 감당. 장기 방향 양호.':
+              pir.ratio>=.1?' 아직 시작 단계. 월세·배당·이자 소득 확대 전략 필요.':
+              ' 수동 소득이 거의 없음. 근로소득 의존도 매우 높음.'}</div>
+          <div class="pir-bar-wrap">
+            <div class="pir-bar-bg"><div class="pir-bar-fill" style="width:${pirPct}%"></div></div>
+            <div class="pir-bar-marks"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100% FIRE</span></div>
+          </div>
+          <div class="pir-stats">
+            <span>월세: <b>${fmt(pir.rental)}</b></span>
+            <span>투자(이자·배당): <b>${fmt(pir.invest)}</b></span>
+            ${fireNeed>0?`<span>완전 FIRE까지 추가 자본 필요: <b style="color:var(--cyan)">${fmt(fireNeed)}</b></span>`:''}
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+    // 3. 유휴 현금 경고 (초과분 있을 때만)
+    const idle=idleCashAlert(lt);
+    if(idle.excess>5000000){
+      h+=`<div class="idle-card">
+        <div>
+          <div class="lbl">💵 유휴 현금 알림</div>
+          <div class="body">비상자금 6개월분 <b>${fmt(idle.need)}</b> 초과하여 현금 <b>${fmt(idle.excess)}</b>이 예금에 대기 중입니다.</div>
+        </div>
+        <div class="opp">
+          <div class="opp-val">+${fmt(idle.annualOpp)}</div>
+          <div class="opp-sub">연 5% 투자 시 기회비용</div>
+        </div>
+      </div>`;
+    }
+
+    // 4. 복리 시뮬레이션 강화
+    const recent6=tl.slice(-6);
+    const avgNi6=recent6.length?Math.round(recent6.reduce((a,d)=>a+d.ni,0)/recent6.length):0;
+    const monthlySaveEff=SIM_CFG.monthlySave!=null?SIM_CFG.monthlySave:avgNi6;
+    const simMonths=SIM_CFG.months||60;
+    const simIsAuto=SIM_CFG.monthlySave==null;
+    const fvNow=compoundFV(lt.nw,monthlySaveEff,SIM_RATE,simMonths);
+    const fvNoYield=compoundFV(lt.nw,monthlySaveEff,0,simMonths);
+    const yearsDbl=yearsToDouble(SIM_RATE);
+    h+=`<div class="sim-v2">
+      <div class="sim-v2-hd">📈 복리 시뮬레이션 <span style="margin-left:auto;font-size:var(--fs-xs);color:var(--t3);font-weight:600">자산 증식 경로</span></div>
+      <div class="sim-ctrl" style="margin-bottom:12px">
+        <label>월 저축액</label>
+        <input type="text" inputmode="decimal" value="${fmtInput(monthlySaveEff)}" ${simIsAuto?'title="최근 6개월 평균 순수익 기준 (자동)"':''}
+          onfocus="this.value=String(this.value).replace(/,/g,'')"
+          onblur="SIM_CFG.monthlySave=parseInput(this.value);sSet('sim_cfg',SIM_CFG);setPeriod(PERIOD)"
+          style="${simIsAuto?'color:var(--t2)':'color:var(--pur)'}">
+        <button onclick="SIM_CFG.monthlySave=null;sSet('sim_cfg',SIM_CFG);setPeriod(PERIOD)" style="padding:5px 10px;border-radius:6px;border:1px solid var(--bdr);background:transparent;color:var(--t3);font-size:var(--fs-xs);cursor:pointer">자동</button>
+        <label>기간(개월)</label>
+        <input type="range" min="6" max="120" step="6" value="${simMonths}"
+          oninput="document.getElementById('sim-mon-lbl').textContent=this.value;SIM_CFG.months=+this.value;sSet('sim_cfg',SIM_CFG);setPeriod(PERIOD)">
+        <span id="sim-mon-lbl" style="font-size:var(--fs-sm);color:var(--t1);font-weight:700;min-width:28px">${simMonths}</span>
+      </div>
+      <div class="sim-rate-row">
+        <span class="lbl">기대 연 수익률</span>
+        ${[0,3,5,7,10].map(r=>`<button class="sim-rate-btn ${SIM_RATE===r?'on':''}" onclick="setSimRate(${r})">${r}%</button>`).join('')}
+      </div>
+      <div class="sim-result-grid">
+        <div class="sim-result-box hl">
+          <div class="lbl">${simMonths}개월 후 (${SIM_RATE}%)</div>
+          <div class="val">${fmt(fvNow)}</div>
+          <div class="sub">현재 ${fmt(lt.nw)} → <b style="color:var(--grn)">+${fmt(fvNow-lt.nw)}</b></div>
+        </div>
+        <div class="sim-result-box">
+          <div class="lbl">저축만 (0%)</div>
+          <div class="val">${fmt(fvNoYield)}</div>
+          <div class="sub">복리 효과: <b style="color:var(--pur)">+${fmt(fvNow-fvNoYield)}</b></div>
+        </div>
+        <div class="sim-result-box">
+          <div class="lbl">72의 법칙</div>
+          <div class="val">${yearsDbl?yearsDbl.toFixed(1)+'년':'—'}</div>
+          <div class="sub">연 ${SIM_RATE}%로 자산 2배 되는 시점</div>
+        </div>
+      </div>
+    </div>`;
+
+    // 5. 목표 역산 계산기
+    const tgtMonths=(GOAL_PLAN.years||5)*12;
+    const reqPmt=requiredPmt(lt.nw,GOAL_PLAN.target,GOAL_PLAN.returnRate,tgtMonths);
+    const gap=reqPmt-monthlySaveEff;
+    const altRate=requiredRate(lt.nw,monthlySaveEff,GOAL_PLAN.target,tgtMonths);
+    h+=`<div class="goal-card">
+      <div class="tit">🎯 목표 역산 계산기 — 얼마나 모아야 할까?</div>
+      <div class="goal-inputs">
+        <div class="goal-input-box">
+          <label>목표 순자본</label>
+          <input type="text" inputmode="decimal" value="${fmtInput(GOAL_PLAN.target)}"
+            onfocus="this.value=String(this.value).replace(/,/g,'')"
+            onblur="setGoal('target',parseInput(this.value))">
+        </div>
+        <div class="goal-input-box">
+          <label>기간 (년)</label>
+          <input type="number" min="1" max="40" value="${GOAL_PLAN.years}"
+            onchange="setGoal('years',+this.value)">
+        </div>
+        <div class="goal-input-box">
+          <label>기대 수익률 (%)</label>
+          <input type="number" min="0" max="20" step="0.5" value="${GOAL_PLAN.returnRate}"
+            onchange="setGoal('returnRate',+this.value)">
+        </div>
+      </div>
+      <div class="goal-result">
+        <div class="goal-result-box ${gap<=0?'pos':'neg'}">
+          <div class="lbl">필요 월 저축액</div>
+          <div class="val">${fmt(reqPmt)}</div>
+          <div class="sub">${gap<=0?
+            `✅ 현재 페이스(${fmt(monthlySaveEff)})로 <b>여유 있게 달성 가능</b> (${fmt(-gap)} 초과 저축)`:
+            `⚠️ 현재 페이스 대비 월 <b>${fmt(gap)}</b> 추가 필요 (+${monthlySaveEff>0?Math.round(gap/monthlySaveEff*100):'—'}%)`}
+          </div>
+        </div>
+        <div class="goal-result-box neu">
+          <div class="lbl">또는 — 저축 유지 시 필요 수익률</div>
+          <div class="val">${altRate<0?'달성 불가':altRate>20?'>20%':altRate.toFixed(2)+'%'}</div>
+          <div class="sub">현재 저축 <b>${fmt(monthlySaveEff)}</b> 유지 + 연 수익률 <b>${altRate>0&&altRate<=20?altRate.toFixed(1)+'%':'—'}</b> 필요</div>
+        </div>
+      </div>
+      <div class="goal-hint">💡 <b>전략</b>: 저축액을 늘리거나 수익률을 높이거나 — 둘 중 하나. 1% 수익률 차이는 장기 복리에서 큰 차이를 만듭니다.</div>
+    </div>`;
+
+    // 6. 저축률 12개월 추이
+    const srSeries=savingsRateSeries(tl);
+    const avgSr=srSeries.length?srSeries.reduce((s,d)=>s+d.rate,0)/srSeries.length:0;
+    h+=`<div class="sr-trend">
+      <div class="sr-trend-hd">📉 저축률 추이 <span class="avg">12개월 평균 <b>${(avgSr*100).toFixed(1)}%</b> (목표: 20%)</span></div>
+      <div class="sr-trend-wrap"><canvas id="cSr"></canvas></div>
+    </div>`;
+
+    // 7. 지출 히트맵
+    const hm=expenseHeatmap(tl);
+    if(hm.matrix.length&&hm.months.length){
+      h+=`<div class="heatmap-card">
+        <div class="hd">🗓️ 카테고리별 지출 히트맵 (최근 ${hm.months.length}개월)
+          <span class="legend"><span>적게</span>
+            <span class="sq" style="background:rgba(239,68,68,.1)"></span>
+            <span class="sq" style="background:rgba(239,68,68,.35)"></span>
+            <span class="sq" style="background:rgba(239,68,68,.6)"></span>
+            <span class="sq" style="background:rgba(239,68,68,.9)"></span>
+            <span>많이</span>
+          </span>
+        </div>
+        <table class="hm-table"><thead><tr><th class="cat-name">카테고리</th>
+          ${hm.months.map(m=>`<th>${m.ym.slice(3)}</th>`).join('')}
+        </tr></thead><tbody>
+          ${hm.matrix.map(r=>`<tr>
+            <th class="cat-name">${r.cat}</th>
+            ${r.cells.map(c=>{
+              const op=c.v>0?0.1+c.intensity*0.8:0;
+              const cls=c.v>0?'':' empty';
+              const disp=c.v>=10000000?(c.v/10000000).toFixed(1)+'천':c.v>=1000000?(c.v/1000000).toFixed(0)+'백':c.v>0?(c.v/10000).toFixed(0)+'만':'-';
+              return`<td><div class="hm-cell${cls}" style="background:rgba(239,68,68,${op})" title="${r.cat} ${c.ym}: ${fmt(c.v)}">${disp}</div></td>`;
+            }).join('')}
+          </tr>`).join('')}
+        </tbody></table>
+      </div>`;
+    }
+
+    // 8. 기본 차트 2개 (수익vs지출 + 복리 예측선)
+    const pdLabel=PERIOD===0?"전체":`최근 ${PERIOD}개월`;
+    const pdBtns=[3,6,12,0].map(n=>`<button class="${PERIOD===n?"on":""}" onclick="setPeriod(${n})">${n===0?"전체":n+"M"}</button>`).join("");
+    h+=`<div class="g2">
+      <div class="cd"><div class="ch"><div class="dt" style="background:var(--blue)"></div><b>수익 vs 지출 (${pdLabel})</b><div class="pd-filter">${pdBtns}</div></div><div class="cb"><div class="cw"><canvas id="c1"></canvas></div></div></div>
+      <div class="cd"><div class="ch"><div class="dt" style="background:var(--cyan)"></div><b>순자본 추이 + 복리 예측 (${SIM_RATE}%)</b></div><div class="cb"><div class="cw"><canvas id="c2"></canvas></div></div></div>
+    </div>`;
+
+  } else {
+    /* ─────────────── 방어 관점 ─────────────── */
+
+    // 1. 건전성 점수
+    const hs=healthScore(lt);
+    h+=`<div class="health-wrap">
+      <div>
+        <div class="health-gauge">
+          <canvas id="cHealth"></canvas>
+          <div class="center">
+            <div class="score" style="color:${hs.color}">${hs.score}<span style="font-size:18px;color:var(--t3)">/100</span></div>
+            <div class="label">건전성 · 등급 <b style="color:${hs.color}">${hs.grade}</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="health-bars">
+        ${hs.breakdown.map(x=>{
+          const grade=x.score===x.max?'우수':x.score>=x.max*.6?'양호':x.score>=x.max*.3?'주의':'위험';
+          const gc=x.score===x.max?'#10b981':x.score>=x.max*.6?'#06b6d4':x.score>=x.max*.3?'#f59e0b':'#ef4444';
+          return`<div class="h-bar-row"><span class="n">${x.n}</span><div class="h-bar"><div class="h-bar-fill" style="width:${x.pct}%;background:${x.c}"></div></div><span class="v" style="color:${x.c}">${x.f(x.raw)}</span><span class="bdg" style="background:${gc}22;color:${gc}">${grade}</span></div>`;
+        }).join('')}
+      </div>
+    </div>`;
+
+    // 2. 자산구성 도넛 + 현금흐름 폭포
+    const alloc=assetAllocation();
+    const cf=cashflowBreakdown();
+    const cfMax=Math.max(...cf.steps.map(s=>Math.abs(s.v)),1);
+    h+=`<div class="alloc-wrap">
+      <div class="alloc-card">
+        <div class="alloc-hd">🥧 자산 구성 (${fmt(alloc.total)})</div>
+        <div class="alloc-bd" style="display:grid;grid-template-columns:180px 1fr;gap:20px;align-items:center">
+          <div style="position:relative;height:180px"><canvas id="cDonut"></canvas></div>
+          <div class="alloc-legend">
+            ${alloc.buckets.sort((a,b)=>b.v-a.v).map(b=>{
+              const pct=alloc.total>0?(b.v/alloc.total*100).toFixed(1):0;
+              return`<div class="row"><span class="dot" style="background:${b.c}"></span><span>${b.name}</span><span class="pct">${pct}%</span><span class="amt">${fmt(b.v)}</span></div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="alloc-card">
+        <div class="alloc-hd">💧 이달 현금흐름 (${lt.ym})</div>
+        <div class="alloc-bd">
+          ${cf.steps.map(s=>{
+            const pct=Math.min(100,Math.abs(s.v)/cfMax*100);
+            const label=s.kind==='in'?'+'+fmt(s.v):s.kind==='net'?(s.v>=0?'+':'')+fmt(s.v):'-'+fmt(s.v);
+            return`<div class="wf-row${s.kind==='net'?' wf-total-row':''}"><span class="n">${s.n}</span><div class="wf-bar-bg"><div class="wf-bar" style="left:0;width:${pct}%;background:${s.c};opacity:${s.kind==='out'?.55:1}"></div></div><span class="v" style="color:${s.c}">${label}</span></div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>`;
+
+    // 3. 마일스톤
+    const ms=milestones(tl,lt);
+    h+=`<div class="ms-grid">`;
+    ms.forEach(m=>{
+      const pct=m.target>0?Math.min(100,Math.round(m.val/m.target*100)):0;
+      const progress=m.invert?100-pct:pct;
+      const displayPct=m.invert?100-pct:pct;
+      h+=`<div class="ms-card">
+        <div class="ms-label">${m.label}</div>
+        <div class="ms-val" style="color:${m.c}">${m.invert?fmt(m.target-m.val):fmt(m.val)}${m.invert?' 상환':''}</div>
+        <div class="ms-sub">${m.sub}</div>
+        <div class="ms-prog-bg"><div class="ms-prog-fill" style="width:${progress}%;background:${m.c}"></div></div>
+        <div class="ms-pct" style="color:${m.c}">${displayPct}% ${displayPct>=100?'✅':''}</div>
+      </div>`;
+    });
+    h+=`</div>`;
+
+    // 4. 지출 TOP
+    const topExp=topExpenses(8);
+    h+=`<div class="top-exp">
+      <div class="top-exp-title">🔥 이달 지출 TOP ${topExp.length} <span style="color:var(--t3);font-weight:400">· 전월 대비</span></div>
+      ${topExp.map(r=>{
+        let dHtml='<span class="d flat">—</span>';
+        if(r.delta!=null){
+          if(r.delta===0)dHtml='<span class="d flat">동일</span>';
+          else{const up=r.delta>0;dHtml=`<span class="d ${up?'up':'dn'}">${up?'▲':'▼'} ${fmt(Math.abs(r.delta))}</span>`;}
+        } else if(r.prev==null)dHtml='<span class="d flat">신규</span>';
+        return`<div class="top-exp-row"><span class="n">${r.item.replace(/\s*\(€\)\s*$/,'')}<small>${r.cat}</small></span><span class="v">${fmt(r.v)}</span>${dHtml}</div>`;
+      }).join('')}
+    </div>`;
+
+    // 5. 차트 2개
+    const pdLabel=PERIOD===0?"전체":`최근 ${PERIOD}개월`;
+    const pdBtns=[3,6,12,0].map(n=>`<button class="${PERIOD===n?"on":""}" onclick="setPeriod(${n})">${n===0?"전체":n+"M"}</button>`).join("");
+    h+=`<div class="g2">
+      <div class="cd"><div class="ch"><div class="dt" style="background:var(--blue)"></div><b>수익 vs 지출 (${pdLabel})</b><div class="pd-filter">${pdBtns}</div></div><div class="cb"><div class="cw"><canvas id="c1"></canvas></div></div></div>
+      <div class="cd"><div class="ch"><div class="dt" style="background:var(--cyan)"></div><b>순자본 추이</b></div><div class="cb"><div class="cw"><canvas id="c2"></canvas></div></div></div>
+    </div>`;
+  }
+
+  // ── X. 공통 하단: 최근 메모 + 카테고리 요약 ──
+  const recentMemos=Object.entries(MONTH_MEMOS)
+    .filter(([,v])=>v?.trim())
+    .sort(([a],[b])=>b.localeCompare(a))
+    .slice(0,3);
+  if(recentMemos.length){
+    h+=`<div style="background:var(--alt);border-radius:14px;border:1px solid rgba(6,182,212,.2);padding:16px 22px;margin-bottom:28px">
+      <div style="font-size:13px;font-weight:600;color:var(--cyan);margin-bottom:12px">📝 최근 월 메모</div>
+      ${recentMemos.map(([m,v])=>`<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bdr)"><span style="font-size:11px;font-weight:700;color:var(--t3);margin-right:10px">${m}</span><span style="font-size:13px;color:var(--t2);white-space:pre-wrap;line-height:1.6">${v.trim()}</span></div>`).join('')}
+    </div>`;
+  }
+  h+=`<div class="cat-sum">
+    <div class="cat-sum-title">📋 카테고리 요약 <small>· 상세 편집은 <a onclick="setT(1)" style="color:var(--cyan);cursor:pointer;text-decoration:underline">월별입력 탭</a></small></div>
+    <div class="cat-sum-grid">`;
+  ["rev","exp","ast","lib"].forEach(s=>{
+    const c=CC[s],lb=LL[s],t=s==="ast"?lt.asset:s==="lib"?lt.liab:s==="rev"?lt.rev:lt.exp;
+    const cats=SC[s].map(g=>({cat:g.cat,sub:g.items.filter(i=>i!=='__eur_rate__').reduce((a,i)=>a+toKRW(i,parseFloat(VL[i])||0),0)})).filter(x=>x.sub!==0).sort((a,b)=>Math.abs(b.sub)-Math.abs(a.sub));
+    const shareOf=t||1;
+    h+=`<div class="cat-sum-col" style="border-color:${c}33">
+      <div class="cat-sum-hd" style="color:${c}"><span>${lb}</span><span>${fmt(t)}</span></div>
+      ${cats.map(x=>{const pct=Math.min(100,Math.abs(x.sub)/Math.abs(shareOf)*100);return`<div class="cat-sum-row"><span class="nm">${x.cat}</span><span class="bar-wrap"><span class="bar" style="width:${pct}%;background:${c}"></span></span><span class="amt">${fmt(x.sub)}</span></div>`;}).join('')}
+    </div>`;
+  });
+  h+=`</div></div>`;
+  p.innerHTML=h;
+
+  // ─────────────── 차트 렌더 ───────────────
+  const sliced=PERIOD===0?tl:tl.slice(-PERIOD);
+  const recent6=tl.slice(-6);
+  const avgNi6=recent6.length?Math.round(recent6.reduce((a,d)=>a+d.ni,0)/recent6.length):0;
+  const monthlySaveEff=SIM_CFG.monthlySave!=null?SIM_CFG.monthlySave:avgNi6;
+  const simMonths=SIM_CFG.months||60;
+
+  if(DASH_VIEW==='growth'){
+    // (1) 자산 증가 원천 분해 누적 막대
+    const attrib=growthAttribution(tl).slice(-12);
+    CH.cAttrib=new Chart(document.getElementById("cAttrib"),{
+      type:'bar',
+      data:{labels:attrib.map(d=>d.ym),datasets:[
+        {label:'저축',data:attrib.map(d=>d.save),backgroundColor:'#10b981',stack:'a',borderRadius:3},
+        {label:'자본이득',data:attrib.map(d=>d.gain),backgroundColor:'#3b82f6',stack:'a',borderRadius:3}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8da4bf',font:{size:11}}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${fmt(ctx.parsed.y)}`}}},scales:{x:{stacked:true,ticks:{color:'#4a6180',font:{size:10}},grid:{display:false}},y:{stacked:true,ticks:{color:'#4a6180',font:{size:10},callback:v=>Math.abs(v)>=100000000?(v/100000000).toFixed(0)+'억':Math.abs(v)>=10000000?(v/10000000).toFixed(0)+'천만':v},grid:{color:'#1a2d46'}}}}
+    });
+    // (2) 저축률 추이
+    const sr=savingsRateSeries(tl);
+    CH.cSr=new Chart(document.getElementById("cSr"),{
+      type:'line',
+      data:{labels:sr.map(d=>d.ym),datasets:[
+        {label:'저축률',data:sr.map(d=>(d.rate*100)),borderColor:'#06b6d4',backgroundColor:'rgba(6,182,212,.15)',borderWidth:2.5,pointRadius:3,fill:true,tension:.3},
+        {label:'목표 20%',data:sr.map(()=>20),borderColor:'#10b981',borderWidth:1.5,borderDash:[5,4],pointRadius:0,fill:false}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8da4bf',font:{size:11}}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`}}},scales:{x:{ticks:{color:'#4a6180',font:{size:10}},grid:{color:'#1a2d46'}},y:{ticks:{color:'#4a6180',font:{size:10},callback:v=>v+'%'},grid:{color:'#1a2d46'}}}}
+    });
+  } else {
+    // 건전성 게이지
+    const hs=healthScore(lt);
+    CH.cHealth=new Chart(document.getElementById("cHealth"),{
+      type:'doughnut',
+      data:{datasets:[{data:[hs.score,100-hs.score],backgroundColor:[hs.color,'rgba(255,255,255,.05)'],borderWidth:0,circumference:180,rotation:270,cutout:'75%'}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{enabled:false}}}
+    });
+    // 자산 구성 도넛
+    const alloc=assetAllocation();
+    const allocSorted=alloc.buckets.slice().sort((a,b)=>b.v-a.v);
+    CH.cDonut=new Chart(document.getElementById("cDonut"),{
+      type:'doughnut',
+      data:{labels:allocSorted.map(b=>b.name),datasets:[{data:allocSorted.map(b=>b.v),backgroundColor:allocSorted.map(b=>b.c),borderColor:'#07101f',borderWidth:2}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${fmt(ctx.parsed)}`}}}}
+    });
+  }
+
+  // 공통: 수익/지출 + 순자본 예측 (복리 기반)
+  CH.c1=new Chart(document.getElementById("c1"),{type:"bar",data:{labels:sliced.map(d=>d.ym),datasets:[{label:"수익",data:sliced.map(d=>d.rev),backgroundColor:"#3b82f6",borderRadius:4,barPercentage:.45},{label:"지출",data:sliced.map(d=>d.exp),backgroundColor:"#ef4444",borderRadius:4,barPercentage:.45},{label:"순수익",data:sliced.map(d=>d.ni),type:"line",borderColor:"#f59e0b",borderWidth:2,pointRadius:3,fill:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:"#8da4bf",font:{size:12}}}},scales:{x:{ticks:{color:"#4a6180",font:{size:11}},grid:{color:"#1a2d46"}},y:{ticks:{color:"#4a6180",font:{size:11},callback:v=>Math.abs(v)>=100000000?(v/100000000).toFixed(0)+"억":Math.abs(v)>=10000000?(v/10000000).toFixed(0)+"천만":v},grid:{color:"#1a2d46"}}}}});
+
+  // 순자본 복리 예측
+  const fcstMonths=Math.min(simMonths,36);
+  const lastNw=tl[tl.length-1].nw;
+  const allMonths=getMonths();
+  const lastYm=tl[tl.length-1].ym;
+  const idx=allMonths.indexOf(lastYm);
+  const futureLabels=idx>=0?allMonths.slice(idx+1,idx+1+fcstMonths):[];
+  const fcstLabels=[...tl.map(d=>d.ym),...futureLabels];
+  // 복리 기반 예측선
+  const rateForChart=DASH_VIEW==='growth'?SIM_RATE:0;
+  const fcstData=[...tl.map(()=>null)];
+  fcstData[fcstData.length-1]=lastNw;
+  for(let i=1;i<=futureLabels.length;i++){
+    fcstData.push(compoundFV(lastNw,monthlySaveEff,rateForChart,i));
+  }
+  // 참고선: 0% (저축만)
+  const zeroData=[...tl.map(()=>null)];
+  zeroData[zeroData.length-1]=lastNw;
+  for(let i=1;i<=futureLabels.length;i++){
+    zeroData.push(compoundFV(lastNw,monthlySaveEff,0,i));
+  }
+  const datasets=[
+    {label:"순자본",data:[...tl.map(d=>d.nw),...futureLabels.map(()=>null)],borderColor:"#06b6d4",borderWidth:2.5,pointRadius:0,fill:false,spanGaps:false},
+    {label:"자산",data:[...tl.map(d=>d.asset),...futureLabels.map(()=>null)],borderColor:"#10b981",borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false},
+    {label:"부채",data:[...tl.map(d=>d.liab),...futureLabels.map(()=>null)],borderColor:"#ef4444",borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false},
+    {label:`예측 (${rateForChart}% 복리)`,data:fcstData,borderColor:"#8b5cf6",borderWidth:2,borderDash:[6,4],pointRadius:0,fill:false,spanGaps:true}
+  ];
+  if(DASH_VIEW==='growth'&&rateForChart>0){
+    datasets.push({label:"예측 (저축만 0%)",data:zeroData,borderColor:"#64748b",borderWidth:1.5,borderDash:[3,3],pointRadius:0,fill:false,spanGaps:true});
+  }
+  CH.c2=new Chart(document.getElementById("c2"),{type:"line",data:{labels:fcstLabels,datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:"#8da4bf",font:{size:11}}}},scales:{x:{ticks:{color:"#4a6180",font:{size:10},maxTicksLimit:12},grid:{color:"#1a2d46"}},y:{ticks:{color:"#4a6180",font:{size:11},callback:v=>Math.abs(v)>=100000000?(v/100000000).toFixed(0)+"억":v},grid:{color:"#1a2d46"}}}}});
+}
+
+/* ══ 탭1: 월별입력 ══ */
+function d1(){
+  const p=document.getElementById("p1"),rT=ss("rev"),eT=ss("exp"),aT=ss("ast"),lT=ss("lib");
+  const months=getMonths();
+  const opts=months.map(m=>{const has=AD[m]?.vals;return`<option value="${m}"${m===EM?" selected":""}>${m}${has?" ✓":""}</option>`}).join("");
+  const viewOn=(v,lbl,color)=>`<button onclick="setInputView('${v}')" style="padding:8px 18px;border-radius:8px;border:none;cursor:pointer;font-size:var(--fs-sm);font-weight:700;background:${INPUT_VIEW===v?color:'var(--alt)'};color:${INPUT_VIEW===v?'#000':'var(--t2)'}">${lbl}</button>`;
+  let h=`<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:22px">
+    <span style="font-size:14px;font-weight:600;color:var(--t2)">입력 월</span>
+    <select class="month-sel" onchange="selM(this.value)">${opts}</select>
+    <button class="sv" onclick="doSave()">💾 저장</button>
+    <button class="pf" onclick="printPDF()">📄 PDF</button>
+    <label class="pf" style="cursor:pointer" title="엑셀 양식에서 이달 데이터를 불러옵니다">
+      📥 엑셀 불러오기
+      <input type="file" accept=".xlsx" style="display:none" onchange="importExcel(this)">
+    </label>
+    <span id="sm" style="color:var(--grn);font-size:13px;font-weight:600"></span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:22px;flex-wrap:wrap">
+    <span style="font-size:var(--fs-xs);color:var(--t3);font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-right:4px">뷰</span>
+    ${viewOn('pl','💰 손익 (수익·지출)','var(--grn)')}
+    ${viewOn('bs','🏦 재무상태 (자산·부채)','var(--blue)')}
+    <span style="margin-left:auto;font-size:var(--fs-xs);color:var(--t3)">${INPUT_VIEW==='pl'?'매월 업데이트':'분기·반기 단위 재평가'}</span>
+  </div>`;
+
+  // v6: EUR rate bar — 항상 표시 (유로 항목이 없으면 환율만 저장)
+  {
+    const rate=getRate();
+    h+=`<div class="eur-bar">
+      <label>€ 1 =</label>
+      <input class="eur-rate-input" type="number" value="${rate}" id="eur-rate-inp"
+        oninput="VL['__eur_rate__']=this.value;document.getElementById('eur-rate-disp').textContent=Number(this.value).toLocaleString()+'원';d1()"
+        title="이달 적용 환율 (원/€)">
+      <span style="font-size:14px;color:#fbbf24;font-weight:700">원</span>
+      <span class="eur-badge">이달 적용 환율</span>
+      <span style="font-size:12px;color:var(--t3);margin-left:4px">€ 항목은 이 환율로 원화 환산됩니다 — 출국 전이면 0으로 두면 됩니다</span>
+      <span style="margin-left:auto;font-size:13px;color:var(--t2)">현재: <b id="eur-rate-disp" style="color:#fbbf24">${rate.toLocaleString()}원</b></span>
+    </div>`;
+  }
+
+  h+=`<div class="ht">카테고리명·항목명 <b>클릭</b> → 이름 수정 &nbsp;|&nbsp; <b>+</b> → 항목 추가 &nbsp;|&nbsp; <b>✕</b> → 삭제 &nbsp;|&nbsp; <b>📦</b> → 아카이브(종료·매각 항목을 UI에서 숨김, 데이터 보존) &nbsp;|&nbsp; 금액: 원화는 <b>원</b>, 유로는 <b>€</b></div>`;
+
+  // v7: 아카이브 바
+  const archN=countArchived();
+  if(archN>0){
+    h+=`<div class="arch-bar">
+      <span style="font-size:16px">📦</span>
+      <span class="cnt">아카이브된 항목 <b>${archN}</b>개 — 상환/매각 완료된 자산·부채 (과거값은 그대로 보존)</span>
+      <button class="${SHOW_ARCHIVED?'on':''}" style="margin-left:auto" onclick="toggleShowArchived()">${SHOW_ARCHIVED?'아카이브 숨기기':'아카이브 보기'}</button>
+    </div>`;
+  }
+
+  // 월 메모
+  const memoVal=(MONTH_MEMOS[EM]||'').replace(/"/g,'&quot;');
+  const memoHas=!!MONTH_MEMOS[EM]?.trim();
+  h+=`<div style="background:var(--alt);border-radius:14px;border:1px solid ${memoHas?'rgba(6,182,212,.35)':'var(--bdr)'};padding:16px 22px;margin-bottom:28px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <span style="font-size:13px;font-weight:600;color:${memoHas?'var(--cyan)':'var(--t3)'}">${EM} 월 메모</span>
+      ${memoHas?`<span style="font-size:11px;background:rgba(6,182,212,.15);color:var(--cyan);padding:2px 9px;border-radius:10px">작성됨</span>`:''}
+    </div>
+    <textarea
+      id="month-memo"
+      rows="3"
+      placeholder="이달 특이사항, 큰 지출 이유, 투자 결정, 기억할 것 등 자유롭게 적어두세요..."
+      oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';saveMonthMemo(this.value)"
+      style="width:100%;background:transparent;border:none;outline:none;font-size:14px;color:var(--t1);font-family:inherit;resize:none;line-height:1.7;min-height:72px"
+    >${memoVal}</textarea>
+  </div>`;
+  // v6: 뷰별 KPI — 선택된 뷰의 3개 지표만 강조, 나머지는 참고용 축약
+  if(INPUT_VIEW==='pl'){
+    h+=`<div class="rw">
+      ${kpi("수익",fmt(rT),"var(--grn)")}
+      ${kpi("지출",fmt(eT),"var(--red)")}
+      ${kpi("순수익",fmt(rT-eT),rT-eT>=0?"var(--grn)":"var(--red)","저축률 "+(rT>0?((rT-eT)/rT*100).toFixed(1):'—')+"%",rT-eT<0)}
+      ${kpi("참고 — 자산",fmt(aT),"var(--t3)","재무상태 뷰에서 편집")}
+      ${kpi("참고 — 부채",fmt(lT),"var(--t3)","재무상태 뷰에서 편집")}
+    </div>`;
+  } else {
+    h+=`<div class="rw">
+      ${kpi("자산",fmt(aT),"var(--blue)")}
+      ${kpi("부채",fmt(lT),"var(--red)")}
+      ${kpi("순자본",fmt(aT-lT),"var(--cyan)","부채비율 "+(aT-lT>0?(lT/(aT-lT)*100).toFixed(1):'—')+"%")}
+      ${kpi("참고 — 수익",fmt(rT),"var(--t3)","손익 뷰에서 편집")}
+      ${kpi("참고 — 지출",fmt(eT),"var(--t3)","손익 뷰에서 편집")}
+    </div>`;
+  }
+
+  const secBg2={rev:"rgba(16,185,129,.07)",exp:"rgba(239,68,68,.07)",ast:"rgba(59,130,246,.07)",lib:"rgba(245,158,11,.07)"};
+  const secBdr2={rev:"rgba(16,185,129,.22)",exp:"rgba(239,68,68,.22)",ast:"rgba(59,130,246,.22)",lib:"rgba(245,158,11,.22)"};
+  const visibleSecs=INPUT_VIEW==='pl'?["rev","exp"]:["ast","lib"];
+
+  visibleSecs.forEach(s=>{
+    const c=CC[s],lb=LL[s],t=ss(s);
+    h+=`<div class="sec-cd" style="background:${secBg2[s]};border-color:${secBdr2[s]}">
+      <div class="sec-hd" style="background:${secBg2[s]};border-bottom:1px solid ${secBdr2[s]}">
+        <span class="sec-label" style="color:${c}">${lb}</span>
+        <div style="display:flex;align-items:center;gap:14px">
+          <span class="sec-total" style="color:${c}">${fmt(t)}</span>
+          <button class="sb" style="background:${c};padding:6px 14px;font-size:12px" onclick="addC('${s}')">+ 카테고리</button>
+        </div>
+      </div>
+      <div class="sec-body">`;
+    SC[s].forEach((g,gi)=>{
+      const sub=g.items.filter(i=>i!=='__eur_rate__').reduce((a,i)=>a+toKRW(i,parseFloat(VL[i])||0),0);
+      const isEurCat=g.cat.includes('(€)');
+      h+=`<div class="cr" style="${isEurCat?'border-left:2px solid rgba(251,191,36,.5);':''}">`
+        +`<span class="nm" onclick="renC('${s}',${gi})">${g.cat}</span>`
+        +`<span class="st" style="color:${c}">${isEurCat?'€→':''}${commas(Math.round(sub))}</span>`
+        +`<button onclick="addI('${s}',${gi})">+</button>`
+        +`<button class="x" onclick="delC('${s}',${gi})">✕</button></div>`;
+      g.items.filter(i=>i!=='__eur_rate__').forEach((it,ii)=>{
+        const isArch=!!ITEM_ARCHIVED[it];
+        // v7: 아카이브된 항목은 SHOW_ARCHIVED 토글이 켜졌을 때만 표시
+        if(isArch&&!SHOW_ARCHIVED)return;
+        const esc=it.replace(/'/g,"\\'").replace(/"/g,"&quot;");
+        const eurItem=isEur(it);
+        const rawVal=parseFloat(VL[it]||0);
+        const equiv=eurItem&&rawVal?`≈ ₩${commas(Math.round(rawVal*getRate()))}`:'' ;
+        const tipKey=`tip__${it}`;
+        const tipVal=(ITEM_TIPS[tipKey]||'').replace(/"/g,'&quot;');
+        const curBtn=`<button class="cur-btn ${eurItem?'eur':'krw'}" onclick="toggleCurrency('${s}',${gi},${ii})" title="통화 전환 (₩ ↔ €)">${eurItem?'€':'₩'}</button>`;
+        const archBtn=`<button class="arch-btn ${isArch?'on':''}" onclick="toggleArchive('${esc}')" title="${isArch?'복원 — 입력 UI에 다시 표시':'아카이브 — 종료/매각 항목을 숨김 (데이터·과거값은 보존)'}">${isArch?'📦 복원':'📦'}</button>`;
+        h+=`<div class="ir-wrap">
+          <div class="ir${eurItem?' eur':''}${isArch?' archived':''}">
+            <span class="nm" onclick="renI('${s}',${gi},${ii})">${it.replace(/\s*\(€\)\s*$/,'')}</span>
+            ${curBtn}
+            <input type="text" inputmode="decimal" value="${fmtInput(VL[it])}" data-k="${it}" placeholder="0"
+              onfocus="this.value=String(this.value).replace(/,/g,'')"
+              onblur="const r=parseInput(this.value);VL['${esc}']=r;this.value=r?fmtInput(r):''"
+              oninput="VL['${esc}']=parseInput(this.value);const eq=this.parentElement.querySelector('.eur-equiv');if(eq)eq.textContent=this.value?'≈ ₩'+Math.round(parseInput(this.value)*${getRate()}).toLocaleString():''">
+            <span class="u">${eurItem?'€':'원'}</span>
+            ${eurItem?`<span class="eur-equiv">${equiv}</span>`:''}
+            ${archBtn}
+            <button class="x" onclick="delI('${s}',${gi},${ii})">✕</button>
+          </div>
+          <textarea class="item-tip-input" rows="1" placeholder="메모 / 확인처 / 팁 (선택)"
+            oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';saveTip('${tipKey.replace(/'/g,"\\'")}',this.value)">${tipVal}</textarea>
+        </div>`;
+      });
+    });
+    h+=`<div class="sf" style="border-top:1px solid ${secBdr2[s]}">
+      <span style="font-weight:600;color:var(--t2);font-size:14px">${lb} 합계</span>
+      <span style="font-weight:800;color:${c};font-size:22px">${fmt(t)}</span>
+    </div></div></div>`;
+  });
+  p.innerHTML=h;
+}
+
+/* ══ 탭5: 건전성 ══ */
+function d3(tl,lt){
+  if(!lt)return;
+  const p=document.getElementById("p5"),ni=lt.rev-lt.exp;
+  if(!p)return;
+  const cash=SC.ast.reduce((s,g)=>g.cat.includes("현금")?s+g.items.reduce((a,i)=>a+(parseFloat(VL[i])||0),0):s,0);
+  const mDebt=computeMonthlyDebt();
+  const ind=[
+    {n:"부채비율",v:lt.nw>0?lt.liab/lt.nw:0,f:v=>(v*100).toFixed(1)+"%",s:"100%↓",d:"부채÷순자본",ok:v=>v<=1,wn:v=>v<=1.5},
+    {n:"순자본비율",v:lt.asset>0?lt.nw/lt.asset:0,f:v=>(v*100).toFixed(1)+"%",s:"50%↑",d:"순자본÷자산",ok:v=>v>=.5,wn:v=>v>=.3},
+    {n:"비상자금",v:lt.exp>0?cash/lt.exp:0,f:v=>v.toFixed(1)+"개월",s:"3~6개월",d:"현금÷월지출",ok:v=>v>=3,wn:v=>v>=1},
+    {n:"저축률",v:lt.rev>0?ni/lt.rev:0,f:v=>(v*100).toFixed(1)+"%",s:"20%↑",d:"순수익÷수익",ok:v=>v>=.2,wn:v=>v>=0},
+    {n:"DSR",v:lt.rev>0?mDebt/lt.rev:0,f:v=>(v*100).toFixed(1)+"%",s:"40%↓",d:`(이자+원금 ${fmt(mDebt)})÷수익`,ok:v=>v<=.3,wn:v=>v<=.4},
+  ];
+  let h=`<div class="cd"><div class="ch"><div class="dt" style="background:var(--grn)"></div><b>건전성 지표</b></div><div class="cb">`;
+  ind.forEach(x=>{const ok=x.ok(x.v),wn=!ok&&x.wn(x.v),cl=ok?"#10b981":wn?"#f59e0b":"#ef4444",bd=ok?"양호":wn?"주의":"위험";
+    h+=`<div class="idr" style="border:1px solid ${cl}22"><div class="n">${x.n}</div><div class="v" style="color:${cl}">${x.f(x.v)}</div><div class="s">${x.s}</div><div class="d">${x.d}</div><span class="bdg" style="background:${cl}22;color:${cl}">${bd}</span></div>`;
+  });
+  h+=`</div></div>`;p.innerHTML=h;
+}
+
+/* ══ 탭2: 연도별 ══ */
+function dYearly(tl){
+  const p=document.getElementById("p2");
+  const years=getYears(tl);
+  const yFmt=v=>Math.abs(v)>=100000000?(v/100000000).toFixed(1)+"억":Math.abs(v)>=10000000?(v/10000000).toFixed(1)+"천만":commas(Math.round(v));
+
+  // 연도별 요약 데이터
+  const ydArr=years.map(yr=>{const ms=getYearData(tl,''+yr);const s=yearSummary(ms);return{yr,ms,...s}});
+
+  let h=`<div class="rw">`;
+  ydArr.forEach(y=>{
+    const yr20='20'+y.yr;
+    const ni=y.rev-y.exp;
+    h+=`<div class="kp" style="min-width:160px;cursor:pointer;border-color:${ni>=0?'rgba(16,185,129,.3)':'rgba(239,68,68,.3)'}" onclick="drillYear('${y.yr}')">
+      <small>${yr20}년</small>
+      <strong style="color:${ni>=0?'var(--grn)':'var(--red)'}">${yFmt(ni)}</strong>
+      <div class="sub">수익 ${yFmt(y.rev)} / 지출 ${yFmt(y.exp)}</div>
+      <div class="sub">순자본 ${yFmt(y.nw)}</div>
+    </div>`;
+  });
+  h+=`</div>`;
+
+  // 차트 2개
+  h+=`<div class="g2">
+    <div class="cd"><div class="ch"><div class="dt" style="background:var(--blue)"></div><b>연간 수익 vs 지출</b></div><div class="cb"><div class="cw"><canvas id="cy1"></canvas></div></div></div>
+    <div class="cd"><div class="ch"><div class="dt" style="background:var(--cyan)"></div><b>연말 순자본 추이</b></div><div class="cb"><div class="cw"><canvas id="cy2"></canvas></div></div></div>
+  </div>`;
+
+  // 연도별 상세 테이블
+  h+=`<div class="cd"><div class="ch"><div class="dt" style="background:var(--t3)"></div><b>연도별 요약</b><span style="margin-left:auto;font-size:var(--fs-xs);color:var(--t3)">카드 클릭 → 월별 드릴다운</span></div><div class="cb" style="overflow-x:auto"><table>
+    <thead><tr><th style="text-align:left">연도</th><th>수익합계</th><th>지출합계</th><th>순수익</th><th>연말자산</th><th>연말부채</th><th>연말순자본</th><th>월수</th></tr></thead><tbody>`;
+  ydArr.forEach((y,i)=>{
+    const ni=y.rev-y.exp;const yr20='20'+y.yr;
+    h+=`<tr style="background:${i%2?"rgba(19,32,53,.4)":"transparent"};cursor:pointer" onclick="drillYear('${y.yr}')">
+      <td style="text-align:left;font-weight:600;color:var(--cyan)">${yr20}</td>
+      <td>${commas(y.rev)}</td><td>${commas(y.exp)}</td>
+      <td style="font-weight:700;color:${ni>=0?'var(--grn)':'var(--red)'}">${commas(ni)}</td>
+      <td>${commas(y.asset)}</td><td>${commas(y.liab)}</td>
+      <td style="font-weight:700;color:var(--cyan)">${commas(y.nw)}</td>
+      <td style="color:var(--t3)">${y.ms.length}</td>
+    </tr>`;
+  });
+  h+=`</tbody></table></div></div>`;
+
+  // 드릴다운 영역
+  h+=`<div id="drill-area"></div>`;
+  p.innerHTML=h;
+
+  const ylabels=ydArr.map(y=>'20'+y.yr);
+  CH.cy1=new Chart(document.getElementById("cy1"),{type:"bar",data:{labels:ylabels,datasets:[
+    {label:"수익",data:ydArr.map(y=>y.rev),backgroundColor:"#3b82f6",borderRadius:4,barPercentage:.4},
+    {label:"지출",data:ydArr.map(y=>y.exp),backgroundColor:"#ef4444",borderRadius:4,barPercentage:.4},
+    {label:"순수익",data:ydArr.map(y=>y.rev-y.exp),type:"line",borderColor:"#f59e0b",borderWidth:2,pointRadius:4,fill:false}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:"#8da4bf",font:{size:12}}}},scales:{x:{ticks:{color:"#4a6180"},grid:{color:"#1a2d46"}},y:{ticks:{color:"#4a6180",font:{size:10},callback:v=>Math.abs(v)>=100000000?(v/100000000).toFixed(0)+"억":v},grid:{color:"#1a2d46"}}}}});
+  CH.cy2=new Chart(document.getElementById("cy2"),{type:"line",data:{labels:ylabels,datasets:[
+    {label:"순자본",data:ydArr.map(y=>y.nw),borderColor:"#06b6d4",borderWidth:2.5,pointRadius:5,pointBackgroundColor:"#06b6d4",fill:true,backgroundColor:"rgba(6,182,212,.07)"},
+    {label:"자산",data:ydArr.map(y=>y.asset),borderColor:"#10b981",borderWidth:1.5,borderDash:[4,4],pointRadius:0,fill:false},
+    {label:"부채",data:ydArr.map(y=>y.liab),borderColor:"#ef4444",borderWidth:1.5,borderDash:[4,4],pointRadius:0,fill:false},
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:"#8da4bf",font:{size:12}}}},scales:{x:{ticks:{color:"#4a6180"},grid:{color:"#1a2d46"}},y:{ticks:{color:"#4a6180",font:{size:10},callback:v=>Math.abs(v)>=100000000?(v/100000000).toFixed(0)+"억":v},grid:{color:"#1a2d46"}}}}});
+}
+
+/* 연도 드릴다운 */
+function drillYear(yr){
+  const tl=getTL();
+  const months=getYearData(tl,''+yr);
+  if(!months.length)return;
+  const drill=document.getElementById('drill-area');
+  if(!drill)return;
+  let h=`<div class="cd"><div class="ch"><div class="dt" style="background:var(--amb)"></div><b>20${yr}년 월별 상세</b><span style="margin-left:auto;font-size:var(--fs-xs);color:var(--t3)">${months.length}개월</span></div><div class="cb" style="overflow-x:auto"><table>
+    <thead><tr><th style="text-align:left">월</th><th>수익</th><th>지출</th><th>순수익</th><th>자산</th><th>부채</th><th>순자본</th><th>메모</th></tr></thead><tbody>`;
+  months.forEach((d,i)=>{
+    const memo=(MONTH_MEMOS[d.ym]||'').trim().slice(0,20);
+    h+=`<tr style="background:${i%2?"rgba(19,32,53,.4)":"transparent"}">
+      <td style="text-align:left;font-weight:600;color:var(--amb)">${d.ym}</td>
+      <td>${commas(d.rev)}</td><td>${commas(d.exp)}</td>
+      <td style="font-weight:700;color:${d.ni>=0?'var(--grn)':'var(--red)'}">${commas(d.ni)}</td>
+      <td>${commas(d.asset)}</td><td>${commas(d.liab)}</td>
+      <td style="font-weight:700;color:var(--cyan)">${commas(d.nw)}</td>
+      <td style="color:var(--t3);font-size:var(--fs-xs)">${memo||'—'}</td>
+    </tr>`;
+  });
+  h+=`</tbody></table></div></div>`;
+  drill.innerHTML=h;
+  drill.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+/* ══ 탭3: 연간목표 ══ */
+const GOAL_COLORS=['#06b6d4','#10b981','#3b82f6','#8b5cf6','#f59e0b','#ef4444','#ec4899','#f97316'];
+function dAnnualGoals(){
+  const p=document.getElementById("p3");
+  const years=['2025','2026','2027','2028','2029','2030'];
+  let h=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px">`;
+  years.forEach(yr=>{
+    const goals=YEAR_GOALS[yr]||[];
+    const done=goals.filter(g=>g.done).length;
+    h+=`<div style="background:var(--alt);border-radius:10px;padding:12px 18px;border:1px solid var(--bdr);cursor:pointer;min-width:110px;text-align:center" onclick="setGoalYear('${yr}')">
+      <div style="font-size:var(--fs-xl);font-weight:var(--fw-black);color:${GOAL_YEAR===yr?'var(--cyan)':'var(--t2)'}">${yr}</div>
+      <div style="font-size:var(--fs-xs);color:var(--t3);margin-top:4px">${goals.length}개 목표${goals.length?` · ${done}완료`:''}</div>
+    </div>`;
+  });
+  h+=`</div>`;
+
+  const yr=GOAL_YEAR||'2025';
+  const goals=YEAR_GOALS[yr]||[];
+  const doneCount=goals.filter(g=>g.done).length;
+  const pct=goals.length?Math.round(doneCount/goals.length*100):0;
+
+  h+=`<div class="sec-cd" style="background:rgba(6,182,212,.05);border-color:rgba(6,182,212,.2)">
+    <div class="sec-hd" style="background:rgba(6,182,212,.07);border-bottom:1px solid rgba(6,182,212,.2)">
+      <span class="sec-label" style="color:var(--cyan)">${yr}년 목표</span>
+      <div style="display:flex;align-items:center;gap:14px">
+        <span style="font-size:var(--fs-lg);font-weight:var(--fw-black);color:var(--cyan)">${doneCount}/${goals.length}</span>
+        <button onclick="addGoal('${yr}')" style="padding:7px 16px;border-radius:8px;border:1px solid rgba(6,182,212,.4);background:rgba(6,182,212,.1);color:var(--cyan);font-size:var(--fs-sm);font-weight:var(--fw-bold);cursor:pointer">+ 목표 추가</button>
+      </div>
+    </div>
+    <div class="sec-body">`;
+
+  if(goals.length){
+    h+=`<div style="background:rgba(255,255,255,.05);border-radius:4px;height:6px;margin-bottom:20px;overflow:hidden"><div style="height:100%;border-radius:4px;background:var(--cyan);width:${pct}%;transition:width .4s"></div></div>`;
+    goals.forEach((g,i)=>{
+      const cc=g.color||GOAL_COLORS[i%GOAL_COLORS.length];
+      const tgt=parseFloat(g.target||0),cur=parseFloat(g.current||0);
+      const gpct=tgt>0?Math.min(100,Math.round(cur/tgt*100)):null;
+      const hasAmt=tgt>0||cur>0;
+      h+=`<div style="display:flex;align-items:flex-start;gap:14px;padding:14px 16px;border-radius:12px;margin-bottom:8px;background:${g.done?'rgba(255,255,255,.03)':'var(--alt)'};border:1px solid ${g.done?'rgba(16,185,129,.2)':cc+'33'};${g.done?'opacity:.6':''}">
+        <div onclick="toggleGoal('${yr}',${i})" style="width:22px;height:22px;border-radius:7px;border:2px solid ${g.done?'#10b981':cc};background:${g.done?'#10b981':'transparent'};flex-shrink:0;margin-top:2px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;color:#fff">${g.done?'✓':''}</div>
+        <div style="flex:1">
+          <div style="font-size:var(--fs-md);font-weight:var(--fw-med);color:${g.done?'var(--t3)':'var(--t1)'};${g.done?'text-decoration:line-through':''};cursor:pointer" onclick="editGoalTitle('${yr}',${i})">${g.title}</div>
+          ${g.note?`<div style="font-size:var(--fs-xs);color:var(--t3);margin-top:4px;line-height:1.5;cursor:pointer" onclick="editGoalNote('${yr}',${i})">${g.note}</div>`:`<div style="font-size:var(--fs-xs);color:rgba(74,97,128,.5);margin-top:4px;cursor:pointer" onclick="editGoalNote('${yr}',${i})">세부 내용 추가...</div>`}
+          <div class="gl-amt-row">
+            <span>현재</span>
+            <input class="gl-amt-input" type="text" inputmode="decimal" value="${fmtInput(cur)}" placeholder="0"
+              onfocus="this.value=String(this.value).replace(/,/g,'')"
+              onblur="this.value=fmtInput(this.value)"
+              onchange="setGoalAmt('${yr}',${i},'current',parseInput(this.value))">
+            <span>/ 목표</span>
+            <input class="gl-amt-input" type="text" inputmode="decimal" value="${fmtInput(tgt)}" placeholder="0"
+              onfocus="this.value=String(this.value).replace(/,/g,'')"
+              onblur="this.value=fmtInput(this.value)"
+              onchange="setGoalAmt('${yr}',${i},'target',parseInput(this.value))">
+            <span>원</span>
+            ${hasAmt&&gpct!=null?`<span style="margin-left:auto;font-weight:700;color:${gpct>=100?'var(--grn)':cc}">${gpct}%</span>`:''}
+          </div>
+          ${hasAmt&&gpct!=null?`<div class="gl-prog"><div class="gl-prog-bar"><div class="gl-prog-fill" style="width:${gpct}%;background:${gpct>=100?'var(--grn)':cc}"></div></div></div>`:''}
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <div style="width:10px;height:10px;border-radius:50%;background:${cc};cursor:pointer" onclick="cycleGoalColor('${yr}',${i})" title="색상 변경"></div>
+          <button onclick="delGoal('${yr}',${i})" style="background:none;border:none;cursor:pointer;color:rgba(239,68,68,.4);font-size:var(--fs-sm);padding:0 4px">✕</button>
+        </div>
+      </div>`;
+    });
+  } else {
+    h+=`<div style="text-align:center;padding:40px;color:var(--t3);font-size:var(--fs-md)">
+      ${yr}년 목표가 없습니다.<br>
+      <span style="font-size:var(--fs-sm)">위 "+ 목표 추가" 버튼으로 추가하세요</span>
+    </div>`;
+  }
+  h+=`</div></div>`;
+  p.innerHTML=h;
+}
+
+let GOAL_YEAR='2025';
+function setGoalYear(yr){GOAL_YEAR=yr;dAnnualGoals();}
+function saveGoals(){sSet('yr_goals',YEAR_GOALS);}
+function addGoal(yr){
+  const title=prompt(`${yr}년 새 목표:`);
+  if(!title?.trim())return;
+  if(!YEAR_GOALS[yr])YEAR_GOALS[yr]=[];
+  YEAR_GOALS[yr].push({title:title.trim(),note:'',done:false,color:GOAL_COLORS[YEAR_GOALS[yr].length%GOAL_COLORS.length]});
+  saveGoals();dAnnualGoals();
+}
+function toggleGoal(yr,i){YEAR_GOALS[yr][i].done=!YEAR_GOALS[yr][i].done;saveGoals();dAnnualGoals();}
+function delGoal(yr,i){if(!confirm('삭제할까요?'))return;YEAR_GOALS[yr].splice(i,1);saveGoals();dAnnualGoals();}
+function editGoalTitle(yr,i){
+  const n=prompt('목표 제목:',YEAR_GOALS[yr][i].title);
+  if(!n?.trim())return;
+  YEAR_GOALS[yr][i].title=n.trim();saveGoals();dAnnualGoals();
+}
+function editGoalNote(yr,i){
+  const n=prompt('세부 내용:',YEAR_GOALS[yr][i].note||'');
+  if(n===null)return;
+  YEAR_GOALS[yr][i].note=n.trim();saveGoals();dAnnualGoals();
+}
+function cycleGoalColor(yr,i){
+  const cur=GOAL_COLORS.indexOf(YEAR_GOALS[yr][i].color);
+  YEAR_GOALS[yr][i].color=GOAL_COLORS[(cur+1)%GOAL_COLORS.length];
+  saveGoals();dAnnualGoals();
+}
+function setGoalAmt(yr,i,field,val){
+  YEAR_GOALS[yr][i][field]=val;
+  saveGoals();dAnnualGoals();
+}
+
+/* ══ 탭4: 계획·버킷 (v7 — 체크리스트 제거, 자금흐름 요약 + 버킷만) ══ */
+function dMilestones(tl,lt){
+  const p=document.getElementById("p4");
+
+  // 1) 자금 흐름 요약 (계획 조정 — 자산·부채 값에서 실시간 계산)
+  const plan=computePlan();
+  const loanNameMap={"신용대출":"신용대출","담보대출":"담보대출","자동차대출":"GV70"};
+  let h=`<div class="cd"><div class="ch"><div class="dt" style="background:var(--cyan)"></div><b>자금 흐름 시뮬레이션 (전세전환 · 대출상환)</b><span style="margin-left:auto;font-size:var(--fs-xs);color:var(--t3)">실시간 계산</span></div><div class="cb">
+    <div class="rw">
+      ${kpi("회수 현금",fmt(plan.recover),"var(--grn)","도곡+전세전환")}
+      ${kpi("청산 부채",fmt(plan.clearDebt),"var(--red)","대출 전부")}
+      ${kpi("잔여 현금",fmt(plan.remain),plan.remain>=0?"var(--cyan)":"var(--red)","회수−청산")}
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--alt);border-radius:10px;padding:12px 18px;margin-bottom:10px">
+      <label style="font-size:var(--fs-xs);color:var(--t3);font-weight:700;letter-spacing:.04em;text-transform:uppercase">금호 신규 전세 계약액</label>
+      <input type="number" value="${plan.geumhoNew}" style="background:#0a1422;border:1px solid var(--bdr);border-radius:7px;padding:6px 12px;color:var(--cyan);font-size:var(--fs-sm);font-weight:700;width:160px;text-align:right;outline:none"
+        onchange="PLAN_CFG.newJeonse=parseFloat(this.value)||0;sSet('plan_cfg',PLAN_CFG);draw()">
+      <span style="font-size:var(--fs-xs);color:var(--t3)">원 (기존 ${fmt(plan.geumhoOld)} → 차액이 순증)</span>
+    </div>
+    <div style="background:var(--alt);border-radius:10px;padding:14px 18px;font-size:var(--fs-sm);color:var(--t2);line-height:2">
+      도곡렉슬 보증금 <span style="color:var(--cyan);font-weight:600">+${fmt(plan.dogok)}</span>&emsp;금호어울림 전세전환 <span style="color:var(--cyan);font-weight:600">+${fmt(plan.geumhoNew-plan.geumhoOld)}</span><br>
+      ${plan.perLoan.map(x=>`${loanNameMap[x.k]||x.k} <span style="color:var(--red);font-weight:600">-${fmt(x.v)}</span>`).join("&emsp;")}
+    </div>
+  </div></div>`;
+
+  // 2) 버킷 현황
+  const cash=lt?catTotalIncludes('ast','현금'):0;
+  const stocks=lt?catTotal('ast','투자자산'):0;
+  const retire=lt?catTotal('ast','은퇴자산'):0;
+  const liabTotal=lt?ss('lib'):0;
+  const em=lt&&lt.exp>0?(cash/lt.exp).toFixed(1):"—";
+  if(lt) h+=`<div class="rw" style="margin-top:24px">
+    ${kpi("비상자금",em+"개월",parseFloat(em)<3?"var(--red)":"var(--grn)","현금÷월지출")}
+    ${kpi("투자자산",fmt(stocks),"var(--blue)")}${kpi("은퇴자산",fmt(retire),"var(--grn)")}
+    ${kpi("총 부채",fmt(liabTotal),"var(--amb)")}
+  </div>`;
+  const DEF_TARGETS=[68000000,500000000,500000000,0];
+  const buckets=[
+    {name:"버킷 1 — 비상금",color:"#ef4444",current:cash,desc:"현금성 자산 전체",items:["현금(국내)","현금(현지€)","현금(급여)","현금(보험)","현금(기타)"]},
+    {name:"버킷 2 — 투자 성장",color:"#3b82f6",current:stocks,desc:"미래에셋·키움·해외 | 모멘텀+성장주",items:["국내주식(미래에셋)","국내주식(키움)","해외주식/ETF"]},
+    {name:"버킷 3 — 은퇴 (불가침)",color:"#10b981",current:retire,desc:"연금+퇴직금 | 달리오식 장기 복리",items:["개인연금(운용)","퇴직금"]},
+    {name:"임대 부채 (이자없음)",color:"#f59e0b",current:catTotal('lib','임대부채'),desc:"전세보증금 — 이자 발생 없음",items:["전세보증금(금호어울림)"]},
+  ];
+  buckets.forEach((b,i)=>{
+    const target=BKT_TARGETS[i]!==undefined?BKT_TARGETS[i]:DEF_TARGETS[i];
+    const pct=target>0?Math.min(100,Math.round(b.current/target*100)):null;
+    h+=`<div class="bkt" style="border-color:${b.color}33;background:${b.color}08">
+      <div class="bkt-title"><span style="color:${b.color}">${b.name}</span><span style="font-size:18px;color:var(--t1)">${fmt(b.current)}</span></div>
+      ${target>0?`<div class="bkt-target-row"><span class="bkt-target-label">목표</span><input class="bkt-target-input" type="text" inputmode="decimal" value="${fmtInput(target)}"
+        onfocus="this.value=String(this.value).replace(/,/g,'')"
+        onblur="this.value=fmtInput(this.value)"
+        onchange="saveBktTarget(${i},parseInput(this.value))"><span class="bkt-target-label">원 → <b style="color:${b.color}">${pct}%</b></span></div>
+      <div class="bkt-bar-bg"><div class="bkt-bar-fill" style="width:${pct}%;background:${b.color}"></div></div>`:''}
+      <div class="bkt-items">${b.desc}<br><span style="color:var(--t3)">${b.items.join("  ·  ")}</span></div>
+    </div>`;
+  });
+  p.innerHTML=h;
+}
+
+
+/* ══ 엑셀 불러오기 (단월 + 다중월 모두 지원) ══ */
+function importExcel(input){
+  const file=input.files[0];
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+      // 통합 시트 또는 기존 출국 전/주재원 중 시트 모두 호환
+      const preferred=wb.Sheets['통합']||wb.Sheets['출국 전']||wb.Sheets['주재원 중'];
+      const targetSheet=preferred||wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(targetSheet,{header:1,defval:''});
+
+      // ── 헤더 행에서 월 목록 추출 ──
+      // 3행(index 2)에 "섹션","카테고리","항목명", 이후 YY.MM 형식 월들
+      const headerRow=rows[2]||[];
+      const monthCols=[];  // {col_index, month_str}
+      headerRow.forEach((cell,ci)=>{
+        const s=String(cell).trim();
+        if(/^\d{2}\.\d{2}$/.test(s)) monthCols.push({ci,month:s});
+      });
+
+      let totalImported=0;
+      const importedMonths=[];
+
+      if(monthCols.length>0){
+        // ── 다중월 모드 ──
+        const availMonths=getMonths();
+        monthCols.forEach(({ci,month})=>{
+          if(!availMonths.includes(month))return;
+          // 해당 월로 전환 후 VL 초기화
+          const savedEM=EM;
+          EM=month;
+          const existing=AD[month];
+          VL=existing?.vals?{...existing.vals}:{...DV_UNIFIED};
+
+          rows.forEach(row=>{
+            const itemRaw=String(row[2]||'').trim(); // C열=항목명
+            const val=row[ci];
+            if(!itemRaw||val===''||val===null||val===undefined||isNaN(parseFloat(val)))return;
+            const eurName=itemRaw+' (€)';
+            const matchKey=Object.prototype.hasOwnProperty.call(VL,eurName)?eurName
+                          :Object.prototype.hasOwnProperty.call(VL,itemRaw)?itemRaw:null;
+            if(!matchKey)return;
+            VL[matchKey]=parseFloat(val)||0;
+            totalImported++;
+          });
+
+          // 저장
+          AD[month]={rev:Math.round(ss("rev")),exp:Math.round(ss("exp")),asset:Math.round(ss("ast")),liab:Math.round(ss("lib")),vals:{...VL}};
+          sSet('fd_all',AD);sSet('fs_unified',SC);
+          importedMonths.push(month);
+          EM=savedEM;
+        });
+        // 화면은 현재 EM 기준으로 복원
+        loadM(EM);
+
+      } else {
+        // ── 단월 모드 (기존 방식) ──
+        let importedMonth='',importedRate=0;
+        rows.forEach(row=>{
+          const itemRaw=String(row[1]||'').trim();
+          const val=row[2];
+          const tip=String(row[4]||'').trim();
+          if(!itemRaw||val===''||val===null||val===undefined)return;
+          if(itemRaw==='입력 월 (YY.MM)'&&val){importedMonth=String(val).trim();return;}
+          if(itemRaw==='€ 환율 (원/€)'&&val){importedRate=parseFloat(val)||0;return;}
+          const eurName=itemRaw+' (€)';
+          const matchKey=Object.prototype.hasOwnProperty.call(VL,eurName)?eurName
+                        :Object.prototype.hasOwnProperty.call(VL,itemRaw)?itemRaw:null;
+          if(!matchKey)return;
+          VL[matchKey]=parseFloat(val)||0;
+          if(tip){ITEM_TIPS[`tip__${matchKey}`]=tip;sSet('item_tips',ITEM_TIPS);}
+          totalImported++;
+        });
+        if(importedRate>0) VL['__eur_rate__']=importedRate;
+        if(importedMonth){const ms=getMonths();if(ms.includes(importedMonth))EM=importedMonth;}
+        doSave();
+        importedMonths.push(importedMonth||EM);
+      }
+
+      draw();
+      const sm=document.getElementById('sm');
+      if(sm){
+        const label=importedMonths.length>1
+          ?`✓ ${importedMonths.length}개월 불러옴 (${importedMonths[0]}~${importedMonths[importedMonths.length-1]})`
+          :`✓ ${totalImported}개 항목 불러옴 (${importedMonths[0]||''})`;
+        sm.textContent=label;
+        setTimeout(()=>{if(sm)sm.textContent=''},4000);
+      }
+    }catch(err){
+      alert('엑셀 읽기 실패: '+err.message+'\n'+err.stack);
+    }
+    input.value='';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ══ 전체 데이터 내보내기 / 불러오기 ══ */
+function exportJSON(){
+  const payload={
+    version:6,
+    exported:new Date().toISOString(),
+    fd_all:sGet('fd_all')||AD||{},
+    fs_unified:sGet('fs_unified')||null,
+    // 구버전 호환을 위해 함께 저장
+    fs_pre:sGet('fs_pre')||null,
+    fs_post:sGet('fs_post')||null,
+    bkt_targets:sGet('bkt_targets')||{},
+    item_tips:sGet('item_tips')||{},
+    mm_all:sGet('mm_all')||MONTH_MEMOS||{},
+    yr_goals:sGet('yr_goals')||YEAR_GOALS||{},
+    plan_cfg:sGet('plan_cfg')||PLAN_CFG,
+    sim_cfg:sGet('sim_cfg')||SIM_CFG,
+    goal_plan:sGet('goal_plan')||GOAL_PLAN,
+    item_archived:sGet('item_archived')||ITEM_ARCHIVED||{},
+  };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  const date=new Date().toISOString().slice(0,10);
+  a.href=url; a.download=`재무대시보드_백업_${date}.json`;
+  a.click(); URL.revokeObjectURL(url);
+  const m=document.getElementById('backup-msg');
+  if(m){m.textContent='✓ 저장됨';setTimeout(()=>{if(m)m.textContent=''},2500);}
+}
+
+function importJSON(input){
+  const file=input.files[0]; if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const d=JSON.parse(e.target.result);
+      if(!d.version||(!d.fd_all&&!d.fd_pre)) throw new Error('올바른 백업 파일이 아닙니다');
+      if(d.fd_all)  sSet('fd_all',  d.fd_all);
+      else{ if(d.fd_pre) sSet('fd_pre',d.fd_pre); if(d.fd_post) sSet('fd_post',d.fd_post); }
+      if(d.fs_unified) sSet('fs_unified',d.fs_unified);
+      if(d.fs_pre)  sSet('fs_pre', d.fs_pre);
+      if(d.fs_post) sSet('fs_post',d.fs_post);
+      if(d.bkt_targets)  sSet('bkt_targets', d.bkt_targets);
+      if(d.item_tips)    sSet('item_tips',   d.item_tips);
+      if(d.mm_all)       sSet('mm_all',      d.mm_all);
+      if(d.yr_goals)     sSet('yr_goals',    d.yr_goals);
+      if(d.plan_cfg)     sSet('plan_cfg',    d.plan_cfg);
+      if(d.sim_cfg)      sSet('sim_cfg',     d.sim_cfg);
+      if(d.goal_plan)    sSet('goal_plan',   d.goal_plan);
+      if(d.item_archived)sSet('item_archived',d.item_archived);
+      // 상태 재초기화
+      BKT_TARGETS=d.bkt_targets||{};
+      ITEM_TIPS=d.item_tips||{};
+      MONTH_MEMOS=d.mm_all||{};
+      YEAR_GOALS=d.yr_goals||{};
+      PLAN_CFG=Object.assign({newJeonse:420000000},d.plan_cfg||{});
+      SIM_CFG=Object.assign({monthlySave:null,annualReturn:3,months:60},d.sim_cfg||{});
+      GOAL_PLAN=Object.assign({target:1500000000,years:5,returnRate:5},d.goal_plan||{});
+      ITEM_ARCHIVED=d.item_archived||{};
+      AD=sGet('fd_all')||{};
+      // 통합 스키마 리로드
+      SC=sGet('fs_unified')||JSON.parse(JSON.stringify(DSC_UNIFIED));
+      loadM(EM); draw();
+      const m=document.getElementById('backup-msg');
+      const cnt_all=Object.keys(AD).length;
+      if(m){
+        m.textContent=`✓ 복원 완료 (${cnt_all}개월 데이터)`;
+        setTimeout(()=>{if(m)m.textContent=''},4000);
+      }
+    }catch(err){alert('불러오기 실패: '+err.message);}
+    input.value='';
+  };
+  reader.readAsText(file);
+}
+
+/* ══ PDF ══ */
+function printPDF(){
+  sync();
+  const r=ss("rev"),e=ss("exp"),a=ss("ast"),l=ss("lib"),ni=r-e,nw=a-l;
+  const ph='통합';
+  let h=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>재무제표 ${EM}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,"Malgun Gothic",sans-serif;font-size:12px;padding:28px;color:#111;line-height:1.6}h1{font-size:22px;margin-bottom:4px;font-weight:800}.top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #111;padding-bottom:12px;margin-bottom:18px}.badge{background:#e0f2fe;color:#0369a1;padding:2px 10px;border-radius:12px;font-size:10px;font-weight:700}.kps{display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap}.kp{text-align:center;padding:12px 18px;border:1px solid #e5e7eb;border-radius:10px}.kp small{display:block;font-size:10px;color:#6b7280}.kp b{font-size:16px}.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px}.sec{border:1px solid #e5e7eb;border-radius:10px;padding:14px;break-inside:avoid}.stl{font-size:13px;font-weight:800;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between}.cat{font-size:11px;font-weight:700;background:#f9fafb;padding:4px 8px;border-radius:4px;margin:6px 0 2px;display:flex;justify-content:space-between}.item{display:flex;justify-content:space-between;padding:3px 8px 3px 18px;border-bottom:1px solid #f3f4f6;font-size:11px}.fcf{text-align:center;padding:16px;margin-top:18px;border:2px solid;border-radius:12px;font-size:20px;font-weight:800}</style></head><body>`;
+  h+=`<div class="top"><div><h1>₩ 개인 재무제표</h1><div style="font-size:12px;color:#6b7280;margin-top:4px">양상운 가계 &nbsp;|&nbsp; ${EM} &nbsp;<span class="badge">${ph}</span></div></div><div style="color:#9ca3af;font-size:11px">출력: ${new Date().toLocaleDateString("ko")}</div></div>`;
+  h+=`<div class="kps"><div class="kp"><small>수익</small><b style="color:#10b981">${commas(Math.round(r))}원</b></div><div class="kp"><small>지출</small><b style="color:#ef4444">${commas(Math.round(e))}원</b></div><div class="kp"><small>순수익</small><b style="color:${ni>=0?"#10b981":"#ef4444"}">${commas(Math.round(ni))}원</b></div><div class="kp"><small>자산</small><b style="color:#3b82f6">${commas(Math.round(a))}원</b></div><div class="kp"><small>부채</small><b style="color:#f59e0b">${commas(Math.round(l))}원</b></div><div class="kp"><small>순자본</small><b style="color:#06b6d4">${commas(Math.round(nw))}원</b></div></div>`;
+  h+=`<div class="g2">`;
+  [{s:"ast",lb:"자산",cl:"#3b82f6"},{s:"lib",lb:"부채",cl:"#f59e0b"},{s:"rev",lb:"수익",cl:"#10b981"},{s:"exp",lb:"지출",cl:"#ef4444"}].forEach(({s,lb,cl})=>{
+    h+=`<div class="sec"><div class="stl" style="color:${cl}"><span>${lb}</span><span>${commas(Math.round(ss(s)))}원</span></div>`;
+    SC[s].forEach(g=>{const sub=g.items.reduce((a,i)=>a+(parseFloat(VL[i])||0),0);h+=`<div class="cat"><span>${g.cat}</span><span>${commas(Math.round(sub))}</span></div>`;g.items.forEach(i=>{h+=`<div class="item"><span>${i}</span><span>${commas(parseFloat(VL[i])||0)}</span></div>`})});
+    h+=`</div>`;
+  });
+  h+=`</div><div class="fcf" style="border-color:${ni>=0?"#10b981":"#ef4444"};color:${ni>=0?"#10b981":"#ef4444"}">순수익 ${ni>0?"+":""}${commas(Math.round(ni))}원</div></body></html>`;
+  const w=window.open("","_blank");w.document.write(h);w.document.close();setTimeout(()=>w.print(),500);
+}
+
+/* ══ v7: 도움말 모달 ══ */
+const HELP_PAGES=[
+  {id:'intro',label:'🌱 처음이신가요?',html:`
+    <div class="help-sec">
+      <h3>💡 이게 뭐 하는 도구예요?</h3>
+      <p style="font-size:14px;color:var(--t1);line-height:1.8;margin-bottom:10px">한 마디로: <b>"내 돈이 지금 어디 있고, 얼마나 불어나고 있는지"</b>를 한 화면에 모아서 보는 <b>가계부 + 성적표</b>입니다.</p>
+      <ul>
+        <li>매달 번 돈·쓴 돈을 기록하면 → <b>10년 뒤 내 통장이 얼마일지 미리 보여줌</b></li>
+        <li>돈이 어디서 새고 있는지 <b>자동으로 진단</b>해줌</li>
+        <li>꾸준히 모으면 <b>눈덩이처럼 불어나는 복리 효과</b>를 그래프로 보여줌</li>
+      </ul>
+    </div>
+
+    <div class="help-sec">
+      <h3>📚 기본 용어 4개만 알면 됨</h3>
+      <div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:8px 14px;font-size:13px;margin-top:8px">
+        <div style="font-weight:800;color:var(--blue);padding:8px 12px;background:rgba(59,130,246,.08);border-radius:8px">자산</div>
+        <div style="padding:8px 0;color:var(--t2)">내가 <b>가진 것</b></div>
+        <div style="padding:8px 0;color:var(--t3);font-size:12px">통장, 집, 주식, 자동차</div>
+
+        <div style="font-weight:800;color:var(--red);padding:8px 12px;background:rgba(239,68,68,.08);border-radius:8px">부채</div>
+        <div style="padding:8px 0;color:var(--t2)">갚아야 할 <b>빚</b></div>
+        <div style="padding:8px 0;color:var(--t3);font-size:12px">대출, 신용카드 미결제</div>
+
+        <div style="font-weight:800;color:var(--grn);padding:8px 12px;background:rgba(16,185,129,.08);border-radius:8px">수익</div>
+        <div style="padding:8px 0;color:var(--t2)">이번 달 <b>들어온 돈</b></div>
+        <div style="padding:8px 0;color:var(--t3);font-size:12px">월급, 이자, 월세</div>
+
+        <div style="font-weight:800;color:var(--amb);padding:8px 12px;background:rgba(245,158,11,.08);border-radius:8px">지출</div>
+        <div style="padding:8px 0;color:var(--t2)">이번 달 <b>쓴 돈</b></div>
+        <div style="padding:8px 0;color:var(--t3);font-size:12px">밥값, 관리비, 교육비</div>
+      </div>
+      <div class="ft" style="margin-top:14px">
+        <b>꼭 기억할 두 개의 공식</b><br>
+        ✦ <b>순자본 = 자산 − 부채</b> (진짜 내 돈)<br>
+        ✦ <b>순수익 = 수익 − 지출</b> (이번 달 저축한 돈)
+      </div>
+    </div>
+
+    <div class="help-sec">
+      <h3>🗓️ 매달 뭘 하면 돼요? (딱 5분 루틴)</h3>
+      <div class="step"><div class="num">1</div><div class="txt"><b>월별입력</b> 탭 클릭 → 이번 달 선택</div></div>
+      <div class="step"><div class="num">2</div><div class="txt"><b>💰 손익</b> 버튼 누르기 → 이번 달 번 돈 / 쓴 돈 숫자만 입력</div></div>
+      <div class="step"><div class="num">3</div><div class="txt"><span class="kbd">💾 저장</span> 클릭 → 끝!</div></div>
+      <p style="font-size:13px;color:var(--t2);margin-top:10px;line-height:1.7">📌 자산·부채(집값, 주식 시세, 대출 잔액)는 <b>3달에 한 번</b> 정도 <b>🏦 재무상태</b> 버튼에서 업데이트하면 충분해요.</p>
+    </div>
+
+    <div class="help-sec">
+      <h3>👀 대시보드 열면 제일 먼저 볼 3가지</h3>
+      <ul>
+        <li><b>👉 오늘의 행동 제안</b> — 지금 제일 중요한 일 1개 자동 알림. 예: "유휴 현금이 놀고 있어요, 투자로 돌리세요"</li>
+        <li><b>🧭 이달의 진단</b> — 내 재무 건강검진. 5~6줄로 요약</li>
+        <li><b>건전성 점수</b> — 시험처럼 0~100점 + 등급 A/B/C/D/F. <b>80점 넘으면 우수</b></li>
+      </ul>
+    </div>
+
+    <div class="help-sec">
+      <h3>❓ 자주 궁금한 것</h3>
+      <div style="padding:12px 14px;background:var(--alt);border-radius:10px;margin-bottom:10px">
+        <div style="font-weight:700;color:var(--cyan);margin-bottom:6px">Q. 왜 꾸준히 저축해야 해요?</div>
+        <div style="color:var(--t2);font-size:13px;line-height:1.7">
+          <b>복리</b> 때문. 매달 100만원 + 연 7%면:<br>
+          🔹 10년 후 → <b>1.7억</b><br>
+          🔹 20년 후 → <b>5억</b><br>
+          🔹 30년 후 → <b>12억</b><br>
+          <b>빨리 시작할수록 눈덩이 효과!</b>
+        </div>
+      </div>
+      <div style="padding:12px 14px;background:var(--alt);border-radius:10px;margin-bottom:10px">
+        <div style="font-weight:700;color:var(--cyan);margin-bottom:6px">Q. 복리가 뭐예요?</div>
+        <div style="color:var(--t2);font-size:13px;line-height:1.7">
+          "이자에 이자가 붙는 것". 같은 100만원을 30년 두면:<br>
+          🔹 단리 → 400만 (매년 같은 이자)<br>
+          🔹 복리 → <b>1,745만</b> (4배 차이!)<br>
+          <b>시간 + 복리 = 돈의 마법</b>
+        </div>
+      </div>
+      <div style="padding:12px 14px;background:var(--alt);border-radius:10px;margin-bottom:10px">
+        <div style="font-weight:700;color:var(--cyan);margin-bottom:6px">Q. FIRE가 뭐예요?</div>
+        <div style="color:var(--t2);font-size:13px;line-height:1.7">
+          <b>F</b>inancial <b>I</b>ndependence <b>R</b>etire <b>E</b>arly = "경제적 독립, 조기 은퇴"<br>
+          쉽게 말해: <b>내 자산이 만드는 돈(월세·이자·배당) ≥ 내가 쓰는 돈</b>이면 일 안 해도 살 수 있어요.<br>
+          대시보드의 <b>"수동 소득 비율"</b>이 100%면 FIRE 달성!
+        </div>
+      </div>
+      <div style="padding:12px 14px;background:var(--alt);border-radius:10px;margin-bottom:10px">
+        <div style="font-weight:700;color:var(--cyan);margin-bottom:6px">Q. 저축률은 얼마가 좋아요?</div>
+        <div style="color:var(--t2);font-size:13px;line-height:1.7">
+          번 돈 중 몇 %를 안 쓰고 모았는지. <b>목표는 20% 이상</b>:<br>
+          🔹 월 500만 벌고 100만 저축 → 20% (괜찮음)<br>
+          🔹 월 500만 벌고 250만 저축 → 50% (훌륭!)<br>
+          🔹 월 500만 벌고 0원 저축 → 0% (위험 🚨)
+        </div>
+      </div>
+      <div style="padding:12px 14px;background:var(--alt);border-radius:10px;margin-bottom:10px">
+        <div style="font-weight:700;color:var(--cyan);margin-bottom:6px">Q. 비상자금은 얼마 있어야 해요?</div>
+        <div style="color:var(--t2);font-size:13px;line-height:1.7">
+          <b>월 지출의 3~6개월분</b>을 현금으로 따로 두세요.<br>
+          🔹 월 100만 쓰면 → 300~600만 예금 통장에<br>
+          갑자기 실직·병원비 같은 큰일 날 때 버티는 돈. <b>주식·부동산 말고 언제든 뺄 수 있는 예금</b>으로.
+        </div>
+      </div>
+      <div style="padding:12px 14px;background:var(--alt);border-radius:10px;margin-bottom:10px">
+        <div style="font-weight:700;color:var(--cyan);margin-bottom:6px">Q. 대출은 무조건 빨리 갚는 게 좋아요?</div>
+        <div style="color:var(--t2);font-size:13px;line-height:1.7">
+          <b>이자율</b>을 보세요:<br>
+          🔹 이자율 <b>높은 빚</b> (카드빚, 신용대출 5%↑) → <b>최우선으로 갚기</b><br>
+          🔹 이자율 <b>낮은 빚</b> (주담대 3~4%) → 투자 수익률이 더 높으면 그냥 두고 투자 병행 OK
+        </div>
+      </div>
+      <div style="padding:12px 14px;background:var(--alt);border-radius:10px;margin-bottom:10px">
+        <div style="font-weight:700;color:var(--cyan);margin-bottom:6px">Q. 숫자를 잘못 입력했어요</div>
+        <div style="color:var(--t2);font-size:13px;line-height:1.7">
+          월별입력 탭에서 해당 월 고르고 다시 입력 → 저장. 과거 월도 수정 가능.
+        </div>
+      </div>
+      <div style="padding:12px 14px;background:var(--alt);border-radius:10px;margin-bottom:10px">
+        <div style="font-weight:700;color:var(--cyan);margin-bottom:6px">Q. 컴퓨터 바꾸면 데이터 다 날아가요?</div>
+        <div style="color:var(--t2);font-size:13px;line-height:1.7">
+          네. 그래서 <b>한 달에 한 번은 꼭</b> 우상단 <span class="kbd">⬇ 내보내기</span> 눌러서 JSON 파일 저장하세요. 새 기기에서 <span class="kbd">⬆ 불러오기</span>로 복원.
+        </div>
+      </div>
+      <div style="padding:12px 14px;background:var(--alt);border-radius:10px;margin-bottom:10px">
+        <div style="font-weight:700;color:var(--cyan);margin-bottom:6px">Q. 주식이나 집값을 팔면 항목을 지워야 하나요?</div>
+        <div style="color:var(--t2);font-size:13px;line-height:1.7">
+          <b>지우지 말고 📦 아카이브 버튼</b>을 쓰세요! 지우면 과거 기록이 사라질 수 있어요. 아카이브는 "완료된 것"으로 표시만 하고 데이터는 남깁니다.
+        </div>
+      </div>
+    </div>
+
+    <div class="help-sec">
+      <h3>🌱 처음 3개월 목표</h3>
+      <div class="step"><div class="num">1</div><div class="txt"><b>1개월차</b>: 일단 매달 입력만. 숫자 쌓여야 그래프가 의미 있어요</div></div>
+      <div class="step"><div class="num">2</div><div class="txt"><b>2개월차</b>: 진단 카드 읽고 "아 여기서 돈 많이 쓰네" 파악</div></div>
+      <div class="step"><div class="num">3</div><div class="txt"><b>3개월차</b>: <b>목표 역산 계산기</b>로 "5년 후 N억 만들려면 얼마 저축해야 하나" 목표 세우기</div></div>
+    </div>
+
+    <div class="help-sec ft">
+      💬 <b>막힐 때는</b>: 화면 우하단 <b>❓</b> 버튼 또는 <span class="kbd">?</span> 키 누르면 도움말 언제든 열림. 위 탭의 다른 페이지에 더 상세한 설명이 있어요.
+    </div>
+  `},
+  {id:'quick',label:'🎯 빠른 시작',html:`
+    <div class="help-sec">
+      <h3>🎯 매월 입력 루틴 (3단계)</h3>
+      <div class="step"><div class="num">1</div><div class="txt"><b>월별입력</b> 탭 열기 → 상단 드롭다운에서 <b>이번 달</b> 선택. 저장된 달은 ✓ 표시됩니다.</div></div>
+      <div class="step"><div class="num">2</div><div class="txt">서브뷰 <b>💰 손익 (수익·지출)</b> 선택 → 항목별 금액 입력 → <span class="kbd">💾 저장</span> (또는 <span class="kbd">Ctrl+S</span>)</div></div>
+      <div class="step"><div class="num">3</div><div class="txt">분기에 한 번 정도 <b>🏦 재무상태</b> 뷰로 전환 → 자산·부채 재평가 (주식 시가, 대출 잔액 등) → 저장</div></div>
+    </div>
+    <div class="help-sec">
+      <h3>🔍 대시보드에서 확인할 것</h3>
+      <ul>
+        <li><b>👉 오늘의 행동 제안</b>: 현 상태에서 가장 임팩트 큰 1건 자동 제안 — 매일 이거부터 보세요</li>
+        <li><b>🧭 이달의 진단</b>: 자동 생성된 3~6줄 상태 요약</li>
+        <li><b>🚀 증식 관점 / 🛡️ 방어 관점</b> 토글로 대시보드 뷰 전환</li>
+      </ul>
+    </div>
+    <div class="help-sec">
+      <h3>🚀 증식 관점에서 꼭 볼 것</h3>
+      <ul>
+        <li><b>자산 증가 원천 분해</b>: 저축(내 노력) vs 자본이득(시장) 분리 — 건강한 성장인지 판단</li>
+        <li><b>수동 소득 비율</b>: FIRE의 진짜 지표 (월세+이자+배당 ÷ 월지출)</li>
+        <li><b>목표 역산 계산기</b>: "N년 후 X억 만들려면 월 얼마 저축?" 자동 계산</li>
+        <li><b>복리 시뮬레이션</b>: 기대 수익률 0/3/5/7/10% 시나리오 비교 + 72의 법칙</li>
+        <li><b>저축률 추이</b>: 12개월 저축 습관 트렌드 + 목표 20% 비교</li>
+        <li><b>지출 히트맵</b>: 어느 달 어느 카테고리가 튀었나 한눈에</li>
+      </ul>
+    </div>
+    <div class="help-sec ft">💡 <b>팁</b>: 대시보드는 <b>조회 전용</b>입니다. 값 편집은 모두 <b>월별입력 탭</b>에서 하세요.</div>
+  `},
+  {id:'tabs',label:'📑 탭별 가이드',html:`
+    <div class="help-sec">
+      <h3>① 대시보드</h3>
+      <ul>
+        <li>이달 상태를 한눈에. 데이터 편집 불가, 조회만</li>
+        <li>차트 기간 토글 <span class="kbd">3M</span> <span class="kbd">6M</span> <span class="kbd">12M</span> <span class="kbd">전체</span></li>
+        <li>시뮬레이션 <b>월 저축액</b>·<b>기간</b> 슬라이더로 미래 순자본 예측</li>
+      </ul>
+    </div>
+    <div class="help-sec">
+      <h3>② 월별입력</h3>
+      <ul>
+        <li>월 선택 → <b>손익 / 재무상태</b> 서브뷰 토글 → 저장</li>
+        <li>카테고리명·항목명 <b>클릭</b>해서 이름 수정</li>
+        <li><b>+ 카테고리</b> / 항목 <b>+</b> 버튼으로 추가, <b>✕</b> 삭제</li>
+        <li>항목별 <b>메모</b> 작성 가능 (팁·확인처 등)</li>
+        <li>상단 <b>월 메모</b>: 이달 특이사항 자유 기록</li>
+      </ul>
+    </div>
+    <div class="help-sec">
+      <h3>③ 연도별</h3>
+      <ul>
+        <li>연도 카드 <b>클릭</b> → 해당 연도 월별 드릴다운</li>
+        <li>연말 자산·부채·순자본·연간 수익/지출 요약</li>
+      </ul>
+    </div>
+    <div class="help-sec">
+      <h3>④ 연간목표</h3>
+      <ul>
+        <li>연도별로 목표 추가. 제목·메모·색상·체크박스</li>
+        <li><b>현재 / 목표</b> 금액 입력 → 진행률 바 자동 표시</li>
+      </ul>
+    </div>
+    <div class="help-sec">
+      <h3>⑤ 계획·버킷</h3>
+      <ul>
+        <li><b>자금 흐름 시뮬레이션</b>: 전세전환·대출상환 시나리오 실시간 계산</li>
+        <li><b>금호 신규 전세 계약액</b> 필드 수정하면 회수 현금 자동 재계산</li>
+        <li><b>3개 버킷</b>: 비상금(6개월분) / 투자 성장 / 은퇴(불가침) + 임대부채</li>
+        <li>각 버킷 목표 금액 편집 가능</li>
+      </ul>
+    </div>
+    <div class="help-sec">
+      <h3>⑥ 건전성</h3>
+      <ul>
+        <li>5개 지표 상세: 부채비율 / 순자본비율 / 비상자금 / 저축률 / DSR</li>
+        <li>양호(초록) · 주의(황) · 위험(빨강) 자동 등급</li>
+        <li>DSR은 이자비용+원금상환 카테고리에서 자동 합산</li>
+      </ul>
+    </div>
+  `},
+  {id:'growth',label:'🚀 증식 지표',html:`
+    <div class="help-sec">
+      <h3>📊 자산 증가 원천 분해 (Growth Attribution)</h3>
+      <ul>
+        <li>이번 달 자산 증가 = <b>저축(순수익)</b> + <b>자본이득(시장 움직임)</b>으로 분해</li>
+        <li>저축 비중이 꾸준히 크면 → 건강한 성장 (내 힘으로 키움)</li>
+        <li>자본이득 의존도가 크면 → 시장 하락장에 취약</li>
+      </ul>
+    </div>
+    <div class="help-sec">
+      <h3>💰 수동 소득 비율 (Passive Income Ratio)</h3>
+      <ul>
+        <li><b>월세수입 + 이자·배당 ÷ 월지출</b> — FIRE의 본질 지표</li>
+        <li><b>100% = 완전 FIRE</b> (근로소득 없어도 생활 가능)</li>
+        <li>10% 미만은 근로의존도 매우 높음 → 장기적으로 배당주·임대수익 비중 확대 필요</li>
+      </ul>
+    </div>
+    <div class="help-sec">
+      <h3>🎯 목표 역산 계산기</h3>
+      <ul>
+        <li>"5년 후 15억 만들려면?" — <b>목표 금액 + 기간 + 기대 수익률</b> 입력</li>
+        <li>필요 월 저축액 자동 계산 + 현재 저축 대비 부족/초과 표시</li>
+        <li>대안으로 "현재 저축 유지 시 필요 수익률" 역산 제공</li>
+      </ul>
+    </div>
+    <div class="help-sec">
+      <h3>📈 복리 시뮬레이션</h3>
+      <ul>
+        <li>기대 연 수익률 <span class="kbd">0%</span> <span class="kbd">3%</span> <span class="kbd">5%</span> <span class="kbd">7%</span> <span class="kbd">10%</span> 토글</li>
+        <li>"복리 효과" = 복리 결과 − 저축만(0%) 결과 — 시간이 늘수록 격차 커짐</li>
+        <li><b>72의 법칙</b>: 72 ÷ 연수익률 = 자산 2배 되는 연수 (예: 연 6% → 12년)</li>
+      </ul>
+    </div>
+    <div class="help-sec">
+      <h3>💵 유휴 현금 알림</h3>
+      <ul>
+        <li>비상자금 6개월분 초과 현금 자동 감지</li>
+        <li>연 5% 가정으로 기회비용 계산 → 투자 이동 판단 근거</li>
+      </ul>
+    </div>
+    <div class="help-sec">
+      <h3>🗓️ 지출 히트맵</h3>
+      <ul>
+        <li>최근 12개월 × 카테고리 지출 매트릭스 (각 카테고리 내 최댓값 기준 색상 강도)</li>
+        <li>계절성·반복 과지출 패턴 발견 (예: 매년 12월 교육비 급증)</li>
+      </ul>
+    </div>
+  `},
+  {id:'features',label:'⚙️ 공통 기능',html:`
+    <div class="help-sec">
+      <h3>📦 아카이브 (상환/매각 완료 항목)</h3>
+      <ul>
+        <li>항목 옆 <span class="kbd">📦</span> 버튼으로 아카이브 — 입력 UI에서 <b>숨김</b></li>
+        <li>과거 값, 월별 총계, 스키마 <b>전부 보존</b>. 데이터 손실 없음</li>
+        <li>복원: 상단 "아카이브 보기" 토글 → 회색 처리된 항목 확인 → <span class="kbd">📦 복원</span></li>
+      </ul>
+      <div class="ft">💡 <b>권장 패턴</b>: 상환·매각 완료 시 (1) 값을 0으로 → (2) 저장 → (3) 📦 아카이브</div>
+    </div>
+    <div class="help-sec">
+      <h3>₩/€ 통화 전환</h3>
+      <ul>
+        <li>항목별 <span class="kbd">₩</span> ↔ <span class="kbd">€</span> 버튼으로 즉시 전환</li>
+        <li>월별입력 상단 <b>환율 바</b>에서 매월 적용 환율 설정 — 유로 항목은 자동 원화 환산</li>
+        <li>대시보드·차트 모든 집계는 <b>원화 기준</b>으로 통일</li>
+      </ul>
+    </div>
+    <div class="help-sec">
+      <h3>📈 시뮬레이션 (대시보드)</h3>
+      <ul>
+        <li><b>월 저축액</b>: 기본은 최근 6개월 평균 순수익, 직접 입력 가능. "자동" 버튼으로 리셋</li>
+        <li><b>기간 슬라이더</b>: 6~60개월. 순자본 차트에 보라색 점선으로 예측선 표시</li>
+      </ul>
+    </div>
+    <div class="help-sec">
+      <h3>🧭 자동 진단</h3>
+      <ul>
+        <li>순수익, 비상자금, 자산 편중, 지출 급증, 부채비율 등 <b>규칙 기반</b>으로 자동 생성</li>
+        <li>🔴 위험 · 🟡 주의 · 🟢 양호 · 📈 정보 · 💡 팁 5단계</li>
+      </ul>
+    </div>
+    <div class="help-sec">
+      <h3>🏥 건전성 점수 (대시보드)</h3>
+      <ul>
+        <li>비상자금 25 + 저축률 25 + 부채비율 20 + 순자본비율 20 + DSR 10 = 100점</li>
+        <li>80↑ A · 65↑ B · 50↑ C · 35↑ D · 미만 F</li>
+      </ul>
+    </div>
+  `},
+  {id:'keys',label:'⌨ 단축키',html:`
+    <div class="help-sec">
+      <h3>⌨ 키보드 단축키</h3>
+      <ul>
+        <li><span class="kbd">1</span> <span class="kbd">2</span> ~ <span class="kbd">6</span> — 탭 전환</li>
+        <li><span class="kbd">Ctrl</span> + <span class="kbd">S</span> — 현재 월 저장</li>
+        <li><span class="kbd">Ctrl</span> + <span class="kbd">B</span> — JSON 백업 내보내기</li>
+        <li><span class="kbd">Ctrl</span> + <span class="kbd">←</span> / <span class="kbd">→</span> — 이전/다음 월 전환 (월별입력 탭에서만)</li>
+        <li><span class="kbd">?</span> — 이 도움말 열기</li>
+        <li><span class="kbd">ESC</span> — 도움말 닫기</li>
+      </ul>
+      <div class="ft">Mac은 <b>Ctrl</b> 대신 <b>⌘(Command)</b>로 동작합니다.</div>
+    </div>
+  `},
+  {id:'data',label:'💾 데이터 안전',html:`
+    <div class="help-sec">
+      <h3>💾 백업·복원</h3>
+      <ul>
+        <li>우상단 <span class="kbd">⬇ 내보내기</span> — 모든 데이터(월별·스키마·목표·메모·아카이브·설정)를 하나의 JSON 파일로 다운로드</li>
+        <li><span class="kbd">⬆ 불러오기</span> — 백업 파일 선택 시 즉시 복원. 기존 데이터는 덮어쓰기됨</li>
+        <li>파일명: <b>재무대시보드_백업_YYYY-MM-DD.json</b></li>
+      </ul>
+      <div class="ft">⚠️ <b>중요</b>: 이 대시보드는 <b>브라우저 localStorage</b>에 저장됩니다. 브라우저 초기화·시크릿모드·기기 변경 시 데이터가 사라질 수 있으니 <b>월 1회 정기 백업</b>을 권장합니다.</div>
+    </div>
+    <div class="help-sec">
+      <h3>📥 엑셀 불러오기</h3>
+      <ul>
+        <li>월별입력 탭 상단 <span class="kbd">📥 엑셀 불러오기</span>로 xlsx 파일 import</li>
+        <li>단월 시트·다중월 시트 자동 감지 (3행에 "YY.MM" 형식 월 헤더가 있으면 다중월)</li>
+        <li>통합/출국 전/주재원 중 시트명 모두 호환</li>
+      </ul>
+    </div>
+    <div class="help-sec">
+      <h3>🛡️ 과거 데이터 보호</h3>
+      <ul>
+        <li>저장된 월의 <b>총계(수익·지출·자산·부채)</b>는 저장 시점에 고정됩니다 — 나중에 항목 삭제해도 변하지 않음</li>
+        <li>단, 과거 월을 불러와서 <b>재저장</b>하면 현재 스키마 기준으로 총계가 재계산됨 — 삭제한 항목 값이 누락될 수 있음</li>
+        <li>따라서 상환·매각 완료 항목은 <b>삭제보다 📦 아카이브</b>를 사용하세요</li>
+      </ul>
+    </div>
+  `}
+];
+let HELP_PAGE='intro';
+function openHelp(){
+  document.getElementById('help-overlay').classList.add('on');
+  renderHelp();
+}
+function closeHelp(){document.getElementById('help-overlay').classList.remove('on')}
+function setHelpPage(id){HELP_PAGE=id;renderHelp()}
+function renderHelp(){
+  const tabs=document.getElementById('help-tabs');
+  const bd=document.getElementById('help-bd');
+  if(!tabs||!bd)return;
+  tabs.innerHTML=HELP_PAGES.map(p=>`<button class="${HELP_PAGE===p.id?'on':''}" onclick="setHelpPage('${p.id}')">${p.label}</button>`).join('');
+  const pg=HELP_PAGES.find(p=>p.id===HELP_PAGE)||HELP_PAGES[0];
+  bd.innerHTML=pg.html;
+  bd.scrollTop=0;
+}
+
+/* ══ v6/v7: 키보드 단축키 ══ */
+function setupKeybinds(){
+  document.addEventListener('keydown',e=>{
+    const tag=(e.target.tagName||'').toLowerCase();
+    const typing=tag==='input'||tag==='textarea'||tag==='select';
+    const mod=e.ctrlKey||e.metaKey;
+    // ESC → 도움말 닫기
+    if(e.key==='Escape'){
+      const ov=document.getElementById('help-overlay');
+      if(ov&&ov.classList.contains('on')){closeHelp();return;}
+    }
+    // Ctrl/Cmd + S → 저장
+    if(mod&&e.key.toLowerCase()==='s'){e.preventDefault();doSave();return;}
+    // Ctrl/Cmd + B → 백업 내보내기
+    if(mod&&e.key.toLowerCase()==='b'){e.preventDefault();exportJSON();return;}
+    // Ctrl/Cmd + ← / → : 월 전환 (월별입력 탭에서만)
+    if(mod&&CT===1&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){
+      e.preventDefault();
+      const ms=getMonths();const idx=ms.indexOf(EM);
+      if(idx<0)return;
+      const next=e.key==='ArrowLeft'?Math.max(0,idx-1):Math.min(ms.length-1,idx+1);
+      if(next!==idx){sync();loadM(ms[next]);draw();}
+      return;
+    }
+    if(typing)return;
+    // 1~6 → 탭 전환
+    if(/^[1-6]$/.test(e.key)){
+      const idx=+e.key-1;
+      if(idx<TABS_ALL.length){setT(idx);}
+      return;
+    }
+    // ? → 도움말 모달 열기
+    if(e.key==='?'||(e.shiftKey&&e.key==='/')){
+      openHelp();
+    }
+  });
+}
+
+/* ══ Init ══ */
+(function(){
+  BKT_TARGETS=sGet('bkt_targets')||{};
+  ITEM_TIPS=sGet('item_tips')||{};
+  MONTH_MEMOS=sGet('mm_all')||(()=>{
+    // 구버전 마이그레이션
+    const pre=sGet('mm_pre')||{}, post=sGet('mm_post')||{};
+    return {...pre,...post};
+  })();
+  YEAR_GOALS=sGet('yr_goals')||{};
+  PLAN_CFG=Object.assign({newJeonse:420000000},sGet('plan_cfg')||{});
+  SIM_CFG=Object.assign({monthlySave:null,annualReturn:3,months:60},sGet('sim_cfg')||{});
+  GOAL_PLAN=Object.assign({target:1500000000,years:5,returnRate:5},sGet('goal_plan')||{});
+  ITEM_ARCHIVED=sGet('item_archived')||{};
+  // fd_all 우선, 없으면 구버전 fd_pre+fd_post 병합
+  let stored=sGet('fd_all');
+  if(!stored){
+    const pre=sGet('fd_pre')||{}, post=sGet('fd_post')||{};
+    stored={...pre,...post};
+  }
+  AD=stored;
+  if(!Object.keys(AD).length) HIST.forEach(h=>{AD[h.ym]={rev:h.rev,exp:h.exp,asset:h.asset,liab:h.liab}});
+  // v6: 통합 스키마 우선. 기존 fs_pre/fs_post만 있으면 병합(카테고리·항목 union) 후 저장
+  SC=sGet('fs_unified');
+  if(!SC){
+    const pre=sGet('fs_pre'),post=sGet('fs_post');
+    if(pre||post){
+      SC={rev:[],exp:[],ast:[],lib:[]};
+      ['rev','exp','ast','lib'].forEach(s=>{
+        const catMap=new Map();
+        [pre,post].forEach(src=>{
+          if(!src||!src[s])return;
+          src[s].forEach(g=>{
+            if(!catMap.has(g.cat))catMap.set(g.cat,new Set());
+            g.items.forEach(it=>catMap.get(g.cat).add(it));
+          });
+        });
+        SC[s]=[...catMap].map(([cat,items])=>({cat,items:[...items]}));
+      });
+    } else {
+      SC=JSON.parse(JSON.stringify(DSC_UNIFIED));
+    }
+    sSet('fs_unified',SC);
+  }
+  EM=getMonths()[0];loadM(EM);draw();
+  setupKeybinds();
+})();
+</script>
+</body>
+</html>

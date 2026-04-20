@@ -2,14 +2,15 @@
    ──────────────────────────────────────────
    모든 주요 이벤트에 console.log 추가해서 오프라인 실패 원인 추적
 */
-const VERSION = 'tl-v8.0.6';
+const VERSION = 'tl-v8.1.0';
 const SHELL_CACHE = `shell-${VERSION}`;
 const RUNTIME_CACHE = `runtime-${VERSION}`;
 
 console.log('[SW] script loaded, VERSION:', VERSION);
 
 const SHELL_ASSETS = [
-  './TradeLog_Final_v8.html',
+  './',
+  './index.html',
   './manifest.webmanifest',
   './icon.svg',
   './icon-192.png',
@@ -118,7 +119,7 @@ self.addEventListener('fetch', (event) => {
           console.log('[SW FETCH] navigation: served exact cache match');
           return exact;
         }
-        const main = await caches.match('./TradeLog_Final_v8.html');
+        const main = await caches.match('./index.html') || await caches.match('./');
         if (main) {
           console.log('[SW FETCH] navigation: served fallback cache (main HTML)');
           return main;

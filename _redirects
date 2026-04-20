@@ -1,4 +1,5 @@
-# Cloudflare Pages — Redirects
-# 루트 접속 시 v8 로 자동 이동
-/            /TradeLog_Final_v8.html   302
-/index.html  /TradeLog_Final_v8.html   302
+# Cloudflare — Redirects
+# 이전 파일명 URL → 루트로
+/TradeLog_Final_v8.html   /   301
+/TradeLog_Final_v8        /   301
+/index.html               /   301
