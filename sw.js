@@ -5,7 +5,7 @@
    - 외부 폰트·CDN은 fetch 시 캐시 (runtime)
    - API (KIS/Finnhub/프록시) 는 절대 캐시하지 않음
 */
-const VERSION = 'tl-v8.0.3';
+const VERSION = 'tl-v8.0.4';
 const SHELL_CACHE = `shell-${VERSION}`;
 const RUNTIME_CACHE = `runtime-${VERSION}`;
 
@@ -92,17 +92,27 @@ self.addEventListener('fetch', (event) => {
     return; // 기본 브라우저 동작
   }
 
-  // 2) 내비게이션 요청 (HTML) — 네트워크 우선, 실패 시 캐시
+  // 2) 내비게이션 요청 (HTML) — 네트워크 우선, 오프라인 시 precache된 HTML로 폴백
+  //    ※ 내비게이션 응답은 캐시에 저장 안 함 (Cloudflare가 chunked/redirect로 보낼 때 빈 바디 우려)
   if (request.mode === 'navigate' || request.destination === 'document') {
-    event.respondWith(
-      fetch(request)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(SHELL_CACHE).then((c) => c.put(request, copy)).catch(()=>{});
-          return res;
-        })
-        .catch(() => caches.match(request).then((r) => r || caches.match('./TradeLog_Final_v8.html')))
-    );
+    event.respondWith((async () => {
+      try {
+        const res = await fetch(request);
+        return res;
+      } catch (err) {
+        console.log('[SW] navigate offline, falling back to precached HTML');
+        // 폴백 순서: 정확히 일치하는 URL → precache된 메인 HTML
+        const exact = await caches.match(request, { ignoreSearch: true });
+        if (exact) return exact;
+        const main = await caches.match('./TradeLog_Final_v8.html');
+        if (main) return main;
+        // 최후: 빈 응답이라도 반환해서 공룡 페이지는 막기
+        return new Response(
+          '<!DOCTYPE html><html><body><h1>Offline</h1><p>캐시에서 HTML을 찾을 수 없습니다. 온라인 상태에서 앱을 한 번 열어주세요.</p></body></html>',
+          { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+        );
+      }
+    })());
     return;
   }
 
@@ -122,14 +132,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 4) same-origin — 캐시 우선, 폴백 네트워크
+  // 4) same-origin 에셋 — 캐시 우선, 없으면 네트워크 (runtime 저장은 안 함: precache만 신뢰)
   if (url.origin === self.location.origin) {
     event.respondWith(
-      caches.match(request).then((cached) => cached || fetch(request).then((res) => {
-        const copy = res.clone();
-        caches.open(SHELL_CACHE).then((c) => c.put(request, copy)).catch(()=>{});
-        return res;
-      }).catch(() => cached))
+      caches.match(request).then((cached) => cached || fetch(request))
     );
     return;
   }
