@@ -1,0 +1,38 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors / AI tools
+.vscode/
+.idea/
+.claude/
+*.swp
+
+# 개인 데이터 백업 (절대 커밋 금지)
+*.json
+!manifest.webmanifest
+tradelog_backup_*
+재무대시보드_백업_*
+
+# 옛 버전 / 관련 없는 파일
+TradeLog_Final.html
+TradeLog_Final_v2.html
+TradeLog_Final_v3.html
+TradeLog_Final_v4.html
+TradeLog_Final_v5.html
+TradeLog_Final_v6.html
+TradeLog_Final_v7.html
+TradeLog_Final_v7*.html
+개인재무대시보드*.html
+*.bak
+*.orig
+
+# 로컬 테스트 스크립트 (배포 불필요)
+serve.ps1
+icon-build.html
+
+# Node (Tauri 빌드 시)
+node_modules/
+dist/
+target/

@@ -1,0 +1,27 @@
+# Cloudflare Pages — Response Headers
+# ──────────────────────────────────────
+# SW는 같은 스코프의 요청만 제어 가능 → sw.js 는 루트에 두고 Service-Worker-Allowed 헤더로 확장
+/sw.js
+  Service-Worker-Allowed: /
+  Cache-Control: no-cache
+  Content-Type: application/javascript; charset=utf-8
+
+/manifest.webmanifest
+  Content-Type: application/manifest+json; charset=utf-8
+  Cache-Control: public, max-age=3600
+
+/*.html
+  Cache-Control: no-cache
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/*.svg
+  Cache-Control: public, max-age=604800
+
+/*.png
+  Cache-Control: public, max-age=604800
+
+# 보안
+/*
+  X-Frame-Options: SAMEORIGIN
+  Permissions-Policy: interest-cohort=()
