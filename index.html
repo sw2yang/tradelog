@@ -20200,8 +20200,8 @@ async function bkDownloadHtmlSnapshot(){
       customThemes:  (function(){ try { return JSON.parse(localStorage.getItem('tl-custom-themes')||'[]'); } catch(e){ return []; } })(),
       customSectors: (function(){ try { return JSON.parse(localStorage.getItem('tl-custom-sectors')||'[]'); } catch(e){ return []; } })()
     };
-    // </script> 시퀀스가 JSON 내부에 있으면 파싱 깨지므로 escape
-    const dataJson = JSON.stringify(payload).replace(/<\/script/gi, '<\\/script');
+    // script 닫는 시퀀스(스)가 JSON 내부에 있으면 HTML 파싱이 깨지므로 escape
+    const dataJson = JSON.stringify(payload).replace(new RegExp('<' + '\\/script', 'gi'), '<\\/script');
 
     // 4) __data__ 태그 교체 (script 태그 문자열을 변수로 조립해 파서 오인 방지)
     const S = 'script';
