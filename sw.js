@@ -1,13 +1,12 @@
-/* TradeLog Service Worker
-   ─────────────────────────
-   전략: App shell 캐시 + stale-while-revalidate
-   - HTML/아이콘/매니페스트는 설치 시 프리캐시
-   - 외부 폰트·CDN은 fetch 시 캐시 (runtime)
-   - API (KIS/Finnhub/프록시) 는 절대 캐시하지 않음
+/* TradeLog Service Worker — DEBUG v8.0.5
+   ──────────────────────────────────────────
+   모든 주요 이벤트에 console.log 추가해서 오프라인 실패 원인 추적
 */
-const VERSION = 'tl-v8.0.4';
+const VERSION = 'tl-v8.0.5';
 const SHELL_CACHE = `shell-${VERSION}`;
 const RUNTIME_CACHE = `runtime-${VERSION}`;
+
+console.log('[SW] script loaded, VERSION:', VERSION);
 
 const SHELL_ASSETS = [
   './TradeLog_Final_v8.html',
@@ -18,7 +17,6 @@ const SHELL_ASSETS = [
   './icon-maskable-512.png'
 ];
 
-// 절대 캐시하면 안 되는 호스트 (실시간 데이터)
 const NO_CACHE_HOSTS = [
   'finnhub.io',
   'openapi.koreainvestment.com',
@@ -28,18 +26,17 @@ const NO_CACHE_HOSTS = [
   'query1.finance.yahoo.com',
   'query2.finance.yahoo.com',
   'api.stock.naver.com',
-  'm.stock.naver.com'
+  'm.stock.naver.com',
+  'polling.finance.naver.com',
+  'corsproxy.io'
 ];
 
-// 런타임 캐시 대상 (CDN·폰트 등)
 const RUNTIME_HOSTS = [
   'cdn.jsdelivr.net',
   'fonts.googleapis.com',
   'fonts.gstatic.com'
 ];
 
-// 안정 버전: arrayBuffer로 바디를 완전히 읽어서 새 Response로 저장.
-// Content-Type만 남기고 다른 헤더는 다 버려서 Cloudflare의 Content-Encoding/chunked 전송 간섭 제거.
 async function precacheAsset(cache, url) {
   try {
     console.log('[SW] precache start:', url);
@@ -60,28 +57,39 @@ async function precacheAsset(cache, url) {
 }
 
 self.addEventListener('install', (event) => {
+  console.log('[SW] INSTALL event fired');
   event.waitUntil((async () => {
     const cache = await caches.open(SHELL_CACHE);
     for (const url of SHELL_ASSETS) {
       await precacheAsset(cache, url);
     }
     await self.skipWaiting();
+    console.log('[SW] INSTALL done, skipWaiting called');
   })());
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys.filter((k) => k !== SHELL_CACHE && k !== RUNTIME_CACHE)
-            .map((k) => caches.delete(k))
-      )
-    ).then(() => self.clients.claim())
-  );
+  console.log('[SW] ACTIVATE event fired');
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(
+      keys.filter((k) => k !== SHELL_CACHE && k !== RUNTIME_CACHE)
+          .map((k) => {
+            console.log('[SW] deleting old cache:', k);
+            return caches.delete(k);
+          })
+    );
+    await self.clients.claim();
+    console.log('[SW] ACTIVATE done, claiming clients. Current cache:', SHELL_CACHE);
+  })());
 });
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+
+  // 모든 fetch 이벤트 로깅 (디버그)
+  console.log('[SW FETCH]', request.method, request.mode, request.url);
+
   if (request.method !== 'GET') return;
 
   let url;
@@ -89,26 +97,33 @@ self.addEventListener('fetch', (event) => {
 
   // 1) 실시간 데이터 — 네트워크 전용
   if (NO_CACHE_HOSTS.some((h) => url.hostname.endsWith(h))) {
-    return; // 기본 브라우저 동작
+    console.log('[SW FETCH] → pass-through (API):', url.hostname);
+    return;
   }
 
   // 2) 내비게이션 요청 (HTML) — 네트워크 우선, 오프라인 시 precache된 HTML로 폴백
-  //    ※ 내비게이션 응답은 캐시에 저장 안 함 (Cloudflare가 chunked/redirect로 보낼 때 빈 바디 우려)
   if (request.mode === 'navigate' || request.destination === 'document') {
+    console.log('[SW FETCH] → navigation handler');
     event.respondWith((async () => {
       try {
         const res = await fetch(request);
+        console.log('[SW FETCH] navigation: network OK');
         return res;
       } catch (err) {
-        console.log('[SW] navigate offline, falling back to precached HTML');
-        // 폴백 순서: 정확히 일치하는 URL → precache된 메인 HTML
+        console.log('[SW FETCH] navigation: network FAILED, trying cache. err:', err.message);
         const exact = await caches.match(request, { ignoreSearch: true });
-        if (exact) return exact;
+        if (exact) {
+          console.log('[SW FETCH] navigation: served exact cache match');
+          return exact;
+        }
         const main = await caches.match('./TradeLog_Final_v8.html');
-        if (main) return main;
-        // 최후: 빈 응답이라도 반환해서 공룡 페이지는 막기
+        if (main) {
+          console.log('[SW FETCH] navigation: served fallback cache (main HTML)');
+          return main;
+        }
+        console.warn('[SW FETCH] navigation: NO CACHE FOUND, returning offline page');
         return new Response(
-          '<!DOCTYPE html><html><body><h1>Offline</h1><p>캐시에서 HTML을 찾을 수 없습니다. 온라인 상태에서 앱을 한 번 열어주세요.</p></body></html>',
+          '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>Offline</title></head><body style="font-family:system-ui;padding:2rem"><h1>📡 오프라인</h1><p>캐시에서 앱을 찾을 수 없습니다.</p><p>온라인 상태에서 한 번 접속한 뒤 다시 시도해주세요.</p></body></html>',
           { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
         );
       }
@@ -116,7 +131,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3) Runtime 캐시 (CDN/폰트) — stale-while-revalidate
+  // 3) Runtime 캐시 (CDN/폰트)
   if (RUNTIME_HOSTS.some((h) => url.hostname.endsWith(h))) {
     event.respondWith(
       caches.open(RUNTIME_CACHE).then((cache) =>
@@ -132,16 +147,21 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 4) same-origin 에셋 — 캐시 우선, 없으면 네트워크 (runtime 저장은 안 함: precache만 신뢰)
+  // 4) same-origin 에셋 — 캐시 우선, 없으면 네트워크
   if (url.origin === self.location.origin) {
     event.respondWith(
-      caches.match(request).then((cached) => cached || fetch(request))
+      caches.match(request).then((cached) => {
+        if (cached) {
+          console.log('[SW FETCH] → served from cache:', request.url);
+          return cached;
+        }
+        return fetch(request);
+      })
     );
     return;
   }
 });
 
-// 메시지 제어 (수동 업데이트 트리거)
 self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
 });
