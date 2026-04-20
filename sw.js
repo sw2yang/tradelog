@@ -5,12 +5,10 @@
    - 외부 폰트·CDN은 fetch 시 캐시 (runtime)
    - API (KIS/Finnhub/프록시) 는 절대 캐시하지 않음
 */
-const VERSION = 'tl-v8.0.2';
+const VERSION = 'tl-v8.0.3';
 const SHELL_CACHE = `shell-${VERSION}`;
 const RUNTIME_CACHE = `runtime-${VERSION}`;
 
-// addAll은 all-or-nothing이라 한 개라도 실패하면 캐시가 비어버림.
-// → 개별 add + catch로 "실패해도 나머지는 캐시" 방식으로 변경.
 const SHELL_ASSETS = [
   './TradeLog_Final_v8.html',
   './manifest.webmanifest',
@@ -40,30 +38,35 @@ const RUNTIME_HOSTS = [
   'fonts.gstatic.com'
 ];
 
-// 압축된 응답을 SW 캐시에 저장하면 bodyUsed/stream 이슈로 0바이트가 되는 경우가 있음.
-// → fetch 후 blob()으로 완전히 실체화한 뒤 새 Response로 재구성해서 저장.
+// 안정 버전: arrayBuffer로 바디를 완전히 읽어서 새 Response로 저장.
+// Content-Type만 남기고 다른 헤더는 다 버려서 Cloudflare의 Content-Encoding/chunked 전송 간섭 제거.
 async function precacheAsset(cache, url) {
   try {
-    const res = await fetch(url, { cache: 'reload', credentials: 'same-origin' });
-    if (!res || !res.ok) throw new Error('HTTP ' + (res && res.status));
-    const blob = await res.blob();
-    // 원본 headers 복사하되 Content-Encoding/Length 제거 (blob은 이미 decoded)
-    const headers = new Headers(res.headers);
-    headers.delete('content-encoding');
-    headers.delete('content-length');
-    const clean = new Response(blob, { status: 200, statusText: 'OK', headers });
+    console.log('[SW] precache start:', url);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = await res.arrayBuffer();
+    const ct = res.headers.get('content-type') || 'application/octet-stream';
+    const clean = new Response(buf, {
+      status: 200,
+      statusText: 'OK',
+      headers: { 'Content-Type': ct }
+    });
     await cache.put(url, clean);
+    console.log('[SW] precache OK:', url, '(' + buf.byteLength + ' bytes)');
   } catch (err) {
-    console.warn('[SW] precache skipped:', url, err.message || err);
+    console.warn('[SW] precache FAIL:', url, err.message || err);
   }
 }
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(SHELL_CACHE).then((cache) =>
-      Promise.all(SHELL_ASSETS.map((url) => precacheAsset(cache, url)))
-    ).then(() => self.skipWaiting())
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(SHELL_CACHE);
+    for (const url of SHELL_ASSETS) {
+      await precacheAsset(cache, url);
+    }
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (event) => {
